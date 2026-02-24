@@ -11,6 +11,20 @@ import type {
 
 const router = Router()
 
+// ── Common API error translator ───────────────────────────────────
+function apiError(err: unknown): string {
+  const msg = String(err)
+  if (msg.includes('credit balance is too low') || msg.includes('Your credit balance'))
+    return '크레딧 부족: console.anthropic.com → Plans & Billing에서 크레딧을 충전해주세요.'
+  if (msg.includes('invalid x-api-key') || msg.includes('401'))
+    return 'API 키가 잘못되었습니다. 설정에서 올바른 Anthropic API 키를 입력해주세요.'
+  if (msg.includes('rate limit') || msg.includes('429'))
+    return 'API 요청 한도 초과. 잠시 후 다시 시도해주세요.'
+  if (msg.includes('overloaded') || msg.includes('529'))
+    return 'Anthropic 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.'
+  return msg
+}
+
 // ================================================================
 // GET /api/config — Check if API keys are configured
 // ================================================================
@@ -62,7 +76,7 @@ router.post('/world/generate', async (_req: Request, res: Response) => {
     res.json({ world })
   } catch (err) {
     console.error('[API] World generation error:', err)
-    res.status(500).json({ error: String(err) })
+    res.status(500).json({ error: apiError(err) })
   }
 })
 
@@ -78,7 +92,7 @@ router.post('/npcs/generate', async (req: Request, res: Response) => {
     res.json({ npcs })
   } catch (err) {
     console.error('[API] NPC generation error:', err)
-    res.status(500).json({ error: String(err) })
+    res.status(500).json({ error: apiError(err) })
   }
 })
 
@@ -94,7 +108,7 @@ router.post('/narrative/generate', async (req: Request, res: Response) => {
     res.json({ narrative })
   } catch (err) {
     console.error('[API] Narrative generation error:', err)
-    res.status(500).json({ error: String(err) })
+    res.status(500).json({ error: apiError(err) })
   }
 })
 
@@ -109,7 +123,7 @@ router.post('/map/generate', async (req: Request, res: Response) => {
     res.json({ mapImageUrl })
   } catch (err) {
     console.error('[API] Map generation error:', err)
-    res.status(500).json({ error: String(err) })
+    res.status(500).json({ error: apiError(err) })
   }
 })
 
@@ -124,7 +138,7 @@ router.post('/game/init', async (_req: Request, res: Response) => {
     res.json({ world, npcs, narrative })
   } catch (err) {
     console.error('[API] Init error:', err)
-    res.status(500).json({ error: String(err) })
+    res.status(500).json({ error: apiError(err) })
   }
 })
 
@@ -147,7 +161,7 @@ router.post('/character/backgrounds', async (req: Request, res: Response) => {
     res.json({ backgrounds })
   } catch (err) {
     console.error('[API] Background generation error:', err)
-    res.status(500).json({ error: String(err) })
+    res.status(500).json({ error: apiError(err) })
   }
 })
 
@@ -194,7 +208,7 @@ router.post('/session/create', async (req: Request, res: Response) => {
     })
   } catch (err) {
     console.error('[API] Session creation error:', err)
-    res.status(500).json({ error: String(err) })
+    res.status(500).json({ error: apiError(err) })
   }
 })
 
@@ -259,7 +273,7 @@ router.post('/game/action', async (req: Request, res: Response) => {
     })
   } catch (err) {
     console.error('[API] Game action error:', err)
-    res.status(500).json({ error: String(err) })
+    res.status(500).json({ error: apiError(err) })
   }
 })
 
