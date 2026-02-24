@@ -53,21 +53,74 @@ router.post('/config', async (req: Request, res: Response) => {
 })
 
 // ================================================================
-// POST /api/game/init — Generate world, NPCs, narrative (stateless)
+// POST /api/world/generate — Step 1: Generate world only
+// ================================================================
+router.post('/world/generate', async (_req: Request, res: Response) => {
+  try {
+    const world = await claude.generateWorld()
+    console.log(`[API] World created: ${world.name}`)
+    res.json({ world })
+  } catch (err) {
+    console.error('[API] World generation error:', err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// POST /api/npcs/generate — Step 2: Generate NPCs
+// ================================================================
+router.post('/npcs/generate', async (req: Request, res: Response) => {
+  const { world } = req.body as { world: WorldData }
+  if (!world) return res.status(400).json({ error: 'world required' })
+  try {
+    const npcs = await claude.generateNPCs(world)
+    console.log(`[API] NPCs created: ${npcs.length}`)
+    res.json({ npcs })
+  } catch (err) {
+    console.error('[API] NPC generation error:', err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// POST /api/narrative/generate — Step 3: Generate narrative
+// ================================================================
+router.post('/narrative/generate', async (req: Request, res: Response) => {
+  const { world } = req.body as { world: WorldData }
+  if (!world) return res.status(400).json({ error: 'world required' })
+  try {
+    const narrative = await claude.generateNarrative(world)
+    console.log('[API] Narrative created')
+    res.json({ narrative })
+  } catch (err) {
+    console.error('[API] Narrative generation error:', err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// POST /api/map/generate — Step 4 (optional): Generate map image
+// ================================================================
+router.post('/map/generate', async (req: Request, res: Response) => {
+  const { world } = req.body as { world: WorldData }
+  if (!world) return res.status(400).json({ error: 'world required' })
+  try {
+    const mapImageUrl = await imageService.generateMapImage(world.name, world.lore, world.continents)
+    res.json({ mapImageUrl })
+  } catch (err) {
+    console.error('[API] Map generation error:', err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// POST /api/game/init — (kept for compatibility) Full init in one call
 // ================================================================
 router.post('/game/init', async (_req: Request, res: Response) => {
   try {
-    console.log('[API] Starting game initialization...')
-
     const world = await claude.generateWorld()
-    console.log(`[API] World created: ${world.name}`)
-
     const npcs = await claude.generateNPCs(world)
-    console.log(`[API] NPCs created: ${npcs.length}`)
-
     const narrative = await claude.generateNarrative(world)
-    console.log('[API] Narrative created')
-
     res.json({ world, npcs, narrative })
   } catch (err) {
     console.error('[API] Init error:', err)

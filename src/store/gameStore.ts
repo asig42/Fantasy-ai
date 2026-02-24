@@ -51,6 +51,23 @@ export interface SessionSummary {
   createdAt: number
 }
 
+export type LoadingStepStatus = 'pending' | 'loading' | 'done' | 'error'
+
+export interface LoadingStep {
+  id: string
+  icon: string
+  label: string
+  detail: string
+  status: LoadingStepStatus
+}
+
+const INIT_STEPS: LoadingStep[] = [
+  { id: 'world',     icon: '🌍', label: '세계 창조',    detail: '세계 이름, 대륙, 도시, 배경 설정',    status: 'pending' },
+  { id: 'npcs',      icon: '👑', label: 'NPC 소환',    detail: '개성 있는 NPC 20명 생성',             status: 'pending' },
+  { id: 'narrative', icon: '📜', label: '운명의 서사',  detail: '세계 배경 서사 및 예언 작성',          status: 'pending' },
+  { id: 'map',       icon: '🗺', label: '세계 지도',    detail: '지도 이미지 생성 (fal.ai)',           status: 'pending' },
+]
+
 interface GameStore {
   phase: GamePhase
   setPhase: (phase: GamePhase) => void
@@ -74,6 +91,7 @@ interface GameStore {
 
   hasApiKey: boolean
   savedSessions: SessionSummary[]
+  loadingSteps: LoadingStep[]
 
   initGame: () => Promise<void>
   loadGameData: () => Promise<void>
@@ -112,6 +130,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   hasApiKey: false,
   savedSessions: [],
+  loadingSteps: INIT_STEPS.map(s => ({ ...s })),
 
   setError: (error) => set({ error }),
 
@@ -175,29 +194,67 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
   },
 
-  // ── Init game ─────────────────────────────────────────────
+  // ── Init game (step-by-step) ──────────────────────────────
   initGame: async () => {
-    set({ isLoading: true, error: null, phase: 'generating' })
+    // Reset steps to initial state
+    const steps = INIT_STEPS.map(s => ({ ...s }))
+    set({ isLoading: true, error: null, phase: 'generating', loadingSteps: steps })
+
+    const setStep = (id: string, status: LoadingStepStatus) =>
+      set(state => ({
+        loadingSteps: state.loadingSteps.map(s => s.id === id ? { ...s, status } : s),
+      }))
+
     try {
-      const res = await axios.post('/api/game/init')
-      const { world, npcs, narrative } = res.data
-
+      // Step 1: World
+      setStep('world', 'loading')
+      const worldRes = await axios.post('/api/world/generate')
+      const world: WorldData = worldRes.data.world
       lsSet(LS_WORLD, world)
-      lsSet(LS_NPCS, npcs)
-      lsSet(LS_NARRATIVE, narrative)
+      set({ world, mapImageUrl: world.mapImageUrl ?? null })
+      setStep('world', 'done')
 
-      set({
-        world,
-        npcs,
-        narrative,
-        mapImageUrl: world.mapImageUrl ?? null,
-        isLoading: false,
-        phase: 'worldmap',
-      })
+      // Step 2: NPCs
+      setStep('npcs', 'loading')
+      const npcsRes = await axios.post('/api/npcs/generate', { world })
+      const npcs: NPC[] = npcsRes.data.npcs
+      lsSet(LS_NPCS, npcs)
+      set({ npcs })
+      setStep('npcs', 'done')
+
+      // Step 3: Narrative
+      setStep('narrative', 'loading')
+      const narrativeRes = await axios.post('/api/narrative/generate', { world })
+      const narrative: string = narrativeRes.data.narrative
+      lsSet(LS_NARRATIVE, narrative)
+      set({ narrative })
+      setStep('narrative', 'done')
+
+      // Step 4: Map image (optional, fire-and-forget if fal.ai available)
+      setStep('map', 'loading')
+      axios.post('/api/map/generate', { world })
+        .then(res => {
+          const mapImageUrl: string = res.data.mapImageUrl
+          const updatedWorld = { ...world, mapImageUrl }
+          lsSet(LS_WORLD, updatedWorld)
+          set({ world: updatedWorld, mapImageUrl })
+          setStep('map', 'done')
+        })
+        .catch(() => setStep('map', 'error'))
+
+      set({ isLoading: false, phase: 'worldmap' })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message :
         (axios.isAxiosError(err) ? err.response?.data?.error : String(err))
-      set({ error: `게임 초기화 실패: ${message}`, isLoading: false, phase: 'start' })
+      // Mark the currently loading step as error
+      set(state => ({
+        loadingSteps: state.loadingSteps.map(s =>
+          s.status === 'loading' ? { ...s, status: 'error' } : s
+        ),
+        error: `게임 초기화 실패: ${message}`,
+        isLoading: false,
+        phase: 'start',
+      }))
     }
   },
 
