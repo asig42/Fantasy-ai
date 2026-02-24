@@ -198,4 +198,5 @@ export interface ClaudeGameResponse {
   npc_emotion: string | null
   available_npcs: string[]
   game_over: boolean
+  new_npc?: NPC  // Dynamically created NPC (when Claude introduces a new character)
 }

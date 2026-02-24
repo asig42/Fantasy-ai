@@ -126,22 +126,22 @@ export async function generateNPCs(world: WorldData): Promise<NPC[]> {
 
   const msg = await getClient().messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 10000,
+    max_tokens: 5000,
     system: `당신은 판타지 캐릭터를 설계하는 전문 작가입니다.
 반드시 유효한 JSON 배열만 반환하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.`,
     messages: [
       {
         role: 'user',
-        content: `세계 '${world.name}'의 주요 NPC 20명을 만들어주세요.
+        content: `세계 '${world.name}'의 핵심 NPC 10명을 만들어주세요. 이들은 메인 스토리에 직접 관여하는 중요 인물들입니다.
 국가들: ${kingdomsList}
 
 다음 규칙을 따라주세요:
-- 황제, 왕, 여왕, 대공, 공작, 마법사, 기사단장, 고위 성직자, 상인 길드장, 암살자 길드마스터, 용병대장, 현자, 마녀/마법사, 해적 선장 등 다양한 직함 포함
-- 성별: 남성과 여성 혼합 (최소 6명 여성)
+- 황제/왕, 여왕/대공비, 마법사, 기사단장, 고위 성직자, 상인 길드장, 암살자 길드마스터, 용병대장, 현자, 마녀/대마법사 등 핵심 역할 포함
+- 성별: 남성과 여성 혼합 (최소 4명 여성)
 - 각 캐릭터는 독특한 외모와 성격을 가져야 함
 - appearance 필드는 영어로 작성 (이미지 생성용)
 
-JSON 배열 형식:
+JSON 배열 형식 (정확히 10명):
 [
   {
     "id": "npc_01",
@@ -337,7 +337,34 @@ ${playerInput}
   "npc_speaking": "현재 대화 중인 NPC의 id (없으면 null)",
   "npc_emotion": "NPC 감정 상태 neutral/happy/angry/sad/surprised/serious/smug 중 하나 (없으면 null)",
   "available_npcs": ["현재 장면에 있는 NPC id 배열"],
-  "game_over": false
+  "game_over": false,
+  "new_npc": null
+}
+
+## 새 NPC 즉석 생성 규칙
+- 위 NPC 목록에 없는 새 인물이 이야기에 등장해야 할 때만 new_npc 필드를 채우세요
+- 기존 NPC와 상호작용할 때는 new_npc를 null로 두세요
+- new_npc를 생성할 경우 npc_speaking에 그 id를 사용하세요
+- new_npc 형식:
+{
+  "id": "npc_dyn_[고유숫자]",
+  "name": "이름",
+  "title": "직함",
+  "age": 숫자,
+  "gender": "남성 또는 여성",
+  "nationality": "출신 국가/지역",
+  "appearance": "English: hair, eyes, build, clothing for portrait generation",
+  "personality": ["성격1", "성격2"],
+  "background": "배경 (50자)",
+  "alignment": "선(善) 또는 중립(中立) 또는 악(惡)",
+  "skills": ["기술1", "기술2"],
+  "relationshipToPlayer": "관계",
+  "emotions": [
+    {"emotion": "neutral", "description": "calm expression"},
+    {"emotion": "happy", "description": "warm smile"},
+    {"emotion": "angry", "description": "fierce look"},
+    {"emotion": "serious", "description": "focused gaze"}
+  ]
 }`,
       },
     ],

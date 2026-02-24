@@ -243,9 +243,13 @@ router.post('/game/action', async (req: Request, res: Response) => {
 
     const sceneImageUrl = await imageService.generateSceneImage(response.scene_description)
 
+    // 즉석 생성된 새 NPC가 있으면 목록에 포함
+    const allNpcs = [...(npcs ?? [])]
+    if (response.new_npc) allNpcs.push(response.new_npc)
+
     let npcData = undefined
     if (response.npc_speaking) {
-      const npc = (npcs ?? []).find(n => n.id === response.npc_speaking)
+      const npc = allNpcs.find(n => n.id === response.npc_speaking)
       if (npc) {
         const emotion = response.npc_emotion ?? 'neutral'
         const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
@@ -270,6 +274,7 @@ router.post('/game/action', async (req: Request, res: Response) => {
       npcSpeaking: npcData ?? null,
       availableNpcs: response.available_npcs,
       gameOver: response.game_over,
+      newNpc: response.new_npc ?? null,
     })
   } catch (err) {
     console.error('[API] Game action error:', err)

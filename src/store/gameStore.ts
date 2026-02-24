@@ -63,7 +63,7 @@ export interface LoadingStep {
 
 const INIT_STEPS: LoadingStep[] = [
   { id: 'world',     icon: '🌍', label: '세계 창조',    detail: '세계 이름, 대륙, 도시, 배경 설정',    status: 'pending' },
-  { id: 'npcs',      icon: '👑', label: 'NPC 소환',    detail: '개성 있는 NPC 20명 생성',             status: 'pending' },
+  { id: 'npcs',      icon: '👑', label: 'NPC 소환',    detail: '핵심 NPC 10명 생성 (나머지는 게임 중 등장)',  status: 'pending' },
   { id: 'narrative', icon: '📜', label: '운명의 서사',  detail: '세계 배경 서사 및 예언 작성',          status: 'pending' },
   { id: 'map',       icon: '🗺', label: '세계 지도',    detail: '지도 이미지 생성 (fal.ai)',           status: 'pending' },
 ]
@@ -401,7 +401,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         currentLocation,
       })
 
-      const { narration, sceneImageUrl, currentLocation: newLoc, npcSpeaking, gameOver } = res.data
+      const { narration, sceneImageUrl, currentLocation: newLoc, npcSpeaking, gameOver, newNpc } = res.data
 
       const responseMsg: GameMessage = {
         id: `msg_${Date.now()}_response`,
@@ -430,6 +430,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
         isProcessing: false,
         ...(gameOver ? { phase: 'start' } : {}),
       })
+
+      // 새로 즉석 생성된 NPC를 목록에 추가 (중복 방지)
+      if (newNpc) {
+        set(state => {
+          const exists = state.npcs.some(n => n.id === newNpc.id)
+          if (exists) return {}
+          const updatedNpcs = [...state.npcs, newNpc]
+          lsSet(LS_NPCS, updatedNpcs)
+          return { npcs: updatedNpcs }
+        })
+      }
 
       if (npcSpeaking?.portraitUrl) {
         set(state => ({
