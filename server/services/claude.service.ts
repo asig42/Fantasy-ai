@@ -39,16 +39,30 @@ export async function testApiKey(key: string): Promise<boolean> {
   }
 }
 
+// JSON 파싱 헬퍼 - 잘린 응답 감지
+function parseJson<T>(text: string, pattern: RegExp, context: string): T {
+  const match = text.match(pattern)
+  if (!match) throw new Error(`${context}: JSON을 찾을 수 없습니다`)
+  try {
+    return JSON.parse(match[0]) as T
+  } catch (e) {
+    const msg = String(e)
+    if (msg.includes('Unterminated') || msg.includes('Unexpected end')) {
+      throw new Error(`${context}: 응답이 너무 길어 잘렸습니다. 잠시 후 다시 시도해주세요.`)
+    }
+    throw new Error(`${context}: JSON 파싱 실패 - ${msg}`)
+  }
+}
+
 // ================================================================
 // 1. WORLD GENERATION
 // ================================================================
 export async function generateWorld(): Promise<WorldData> {
   console.log('[Claude] Generating world...')
 
-  const stream = await getClient().messages.stream({
-    model: 'claude-opus-4-6',
-    max_tokens: 4000,
-    thinking: { type: 'adaptive' },
+  const msg = await getClient().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2000,
     system: `당신은 판타지 세계를 창조하는 전문 작가입니다.
 반드시 유효한 JSON만 반환하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.`,
     messages: [
@@ -97,15 +111,9 @@ export async function generateWorld(): Promise<WorldData> {
     ],
   })
 
-  const message = await stream.finalMessage()
-  const textContent = message.content.find(b => b.type === 'text')
+  const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
-
-  const text = textContent.text.trim()
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('No JSON found in world generation response')
-
-  return JSON.parse(jsonMatch[0]) as WorldData
+  return parseJson<WorldData>(textContent.text.trim(), /\{[\s\S]*\}/, '세계 생성')
 }
 
 // ================================================================
@@ -116,10 +124,9 @@ export async function generateNPCs(world: WorldData): Promise<NPC[]> {
 
   const kingdomsList = world.continents.flatMap(c => c.majorKingdoms).join(', ')
 
-  const stream = await getClient().messages.stream({
-    model: 'claude-opus-4-6',
-    max_tokens: 8000,
-    thinking: { type: 'adaptive' },
+  const msg = await getClient().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 10000,
     system: `당신은 판타지 캐릭터를 설계하는 전문 작가입니다.
 반드시 유효한 JSON 배열만 반환하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.`,
     messages: [
@@ -161,16 +168,9 @@ JSON 배열 형식:
     ],
   })
 
-  const message = await stream.finalMessage()
-  const textContent = message.content.find(b => b.type === 'text')
+  const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
-
-  const text = textContent.text.trim()
-  const jsonMatch = text.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) throw new Error('No JSON array found in NPC generation response')
-
-  const npcs = JSON.parse(jsonMatch[0]) as NPC[]
-  return npcs
+  return parseJson<NPC[]>(textContent.text.trim(), /\[[\s\S]*\]/, 'NPC 생성')
 }
 
 // ================================================================
@@ -179,10 +179,9 @@ JSON 배열 형식:
 export async function generateNarrative(world: WorldData): Promise<string> {
   console.log('[Claude] Generating narrative...')
 
-  const stream = await getClient().messages.stream({
-    model: 'claude-opus-4-6',
-    max_tokens: 3000,
-    thinking: { type: 'adaptive' },
+  const msg = await getClient().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2000,
     system: `당신은 판타지 소설의 나레이터입니다.
 영화 오프닝처럼 웅장하고 몰입감 있는 문체로 글을 씁니다.
 4문단으로 구성된 서사를 한국어로 작성합니다.`,
@@ -206,10 +205,8 @@ export async function generateNarrative(world: WorldData): Promise<string> {
     ],
   })
 
-  const message = await stream.finalMessage()
-  const textContent = message.content.find(b => b.type === 'text')
+  const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
-
   return textContent.text.trim()
 }
 
@@ -234,9 +231,9 @@ export async function generateCharacterBackgrounds(
     '팔라딘': '정의와 빛을 위해 싸우는 성스러운 기사',
   }
 
-  const stream = await getClient().messages.stream({
-    model: 'claude-opus-4-6',
-    max_tokens: 2000,
+  const msg = await getClient().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1500,
     system: `반드시 유효한 JSON만 반환하세요. 설명 없이 순수 JSON 배열만 출력하세요.`,
     messages: [
       {
@@ -265,15 +262,9 @@ JSON 배열:
     ],
   })
 
-  const message = await stream.finalMessage()
-  const textContent = message.content.find(b => b.type === 'text')
+  const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
-
-  const text = textContent.text.trim()
-  const jsonMatch = text.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) throw new Error('No JSON found')
-
-  return JSON.parse(jsonMatch[0]) as BackgroundOption[]
+  return parseJson<BackgroundOption[]>(textContent.text.trim(), /\[[\s\S]*\]/, '배경 생성')
 }
 
 // ================================================================
@@ -325,10 +316,9 @@ ${narrative.slice(0, 500)}...
 
 현재 위치: ${currentLocation}`
 
-  const stream = await getClient().messages.stream({
-    model: 'claude-opus-4-6',
+  const msg = await getClient().messages.create({
+    model: 'claude-sonnet-4-6',
     max_tokens: 4000,
-    thinking: { type: 'adaptive' },
     system: systemPrompt,
     messages: [
       {
@@ -353,15 +343,9 @@ ${playerInput}
     ],
   })
 
-  const message = await stream.finalMessage()
-  const textContent = message.content.find(b => b.type === 'text')
+  const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
-
-  const text = textContent.text.trim()
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('No JSON found in game response')
-
-  return JSON.parse(jsonMatch[0]) as ClaudeGameResponse
+  return parseJson<ClaudeGameResponse>(textContent.text.trim(), /\{[\s\S]*\}/, '게임 액션')
 }
 
 // ================================================================
@@ -374,10 +358,9 @@ export async function generateInitialScene(
 ): Promise<ClaudeGameResponse> {
   console.log('[Claude] Generating initial scene...')
 
-  const stream = await getClient().messages.stream({
-    model: 'claude-opus-4-6',
+  const msg = await getClient().messages.create({
+    model: 'claude-sonnet-4-6',
     max_tokens: 3000,
-    thinking: { type: 'adaptive' },
     system: `당신은 판타지 TRPG의 게임 마스터입니다.
 반드시 유효한 JSON만 반환하세요.`,
     messages: [
@@ -408,13 +391,7 @@ JSON 형식:
     ],
   })
 
-  const message = await stream.finalMessage()
-  const textContent = message.content.find(b => b.type === 'text')
+  const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
-
-  const text = textContent.text.trim()
-  const jsonMatch = text.match(/\{[\s\S]*\}/)
-  if (!jsonMatch) throw new Error('No JSON found')
-
-  return JSON.parse(jsonMatch[0]) as ClaudeGameResponse
+  return parseJson<ClaudeGameResponse>(textContent.text.trim(), /\{[\s\S]*\}/, '초기 장면 생성')
 }
