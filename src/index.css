@@ -1,0 +1,289 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   Fantasy AI - Global Styles
+   ============================================ */
+
+:root {
+  --gold: #D4AF37;
+  --gold-dim: #a08020;
+  --dark: #0a0a0f;
+  --darker: #050508;
+  --text: #e8d5b0;
+  --text-dim: #a09070;
+  --panel: rgba(10, 10, 20, 0.9);
+  --border: #3d2e1a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  background-color: var(--darker);
+}
+
+body {
+  font-family: 'Noto Serif KR', 'Noto Sans KR', serif;
+  color: var(--text);
+  line-height: 1.8;
+  overflow-x: hidden;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a15;
+}
+::-webkit-scrollbar-thumb {
+  background: #3d2e1a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gold-dim);
+}
+
+/* ── Typography ── */
+.font-cinzel {
+  font-family: 'Cinzel', serif;
+  letter-spacing: 0.05em;
+}
+
+/* ── Gold divider ── */
+.divider-gold {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  margin: 1rem 0;
+  opacity: 0.5;
+}
+
+/* ── Fantasy Panel ── */
+.fantasy-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(212, 175, 55, 0.08);
+  backdrop-filter: blur(8px);
+}
+
+/* ── Gold text glow ── */
+.text-glow-gold {
+  text-shadow: 0 0 8px rgba(212, 175, 55, 0.6), 0 0 16px rgba(212, 175, 55, 0.3);
+}
+
+/* ── Button styles ── */
+.btn-fantasy {
+  position: relative;
+  padding: 0.75rem 2rem;
+  background: linear-gradient(135deg, #1a0a2e, #2a1040);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  font-family: 'Cinzel', serif;
+  font-size: 0.875rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.btn-fantasy::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.1), transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-fantasy:hover {
+  background: linear-gradient(135deg, #2a1040, #3a1860);
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+  transform: translateY(-1px);
+}
+
+.btn-fantasy:hover::before {
+  left: 100%;
+}
+
+.btn-fantasy:active {
+  transform: translateY(0);
+}
+
+.btn-fantasy:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-fantasy-secondary {
+  padding: 0.5rem 1.5rem;
+  background: transparent;
+  border: 1px solid #3d2e1a;
+  color: var(--text-dim);
+  font-family: 'Cinzel', serif;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-fantasy-secondary:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+/* ── Input styles ── */
+.input-fantasy {
+  background: rgba(10, 10, 20, 0.8);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'Noto Serif KR', serif;
+  padding: 0.75rem 1rem;
+  transition: all 0.3s ease;
+  outline: none;
+  width: 100%;
+}
+
+.input-fantasy:focus {
+  border-color: var(--gold-dim);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.15);
+}
+
+.input-fantasy::placeholder {
+  color: #6b5a3a;
+}
+
+/* ── Narrative text ── */
+.narrative-text {
+  font-family: 'Noto Serif KR', serif;
+  font-size: 1rem;
+  line-height: 2;
+  color: var(--text);
+  text-align: justify;
+  word-break: keep-all;
+}
+
+.narrative-text p {
+  margin-bottom: 1.2rem;
+  text-indent: 1em;
+}
+
+/* ── Loading spinner ── */
+.loading-rune {
+  width: 48px;
+  height: 48px;
+  border: 2px solid rgba(212, 175, 55, 0.1);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Typewriter effect ── */
+.typewriter {
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+/* ── Scene image ── */
+.scene-image-container {
+  position: relative;
+  width: 100%;
+  padding-top: 56.25%; /* 16:9 */
+  overflow: hidden;
+  background: linear-gradient(135deg, #0a0a20, #1a0a2e);
+}
+
+.scene-image-container img,
+.scene-image-container svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ── NPC Portrait ── */
+.npc-portrait {
+  height: 100%;
+  max-height: 400px;
+  object-fit: contain;
+  object-position: bottom;
+  filter: drop-shadow(0 0 20px rgba(212, 175, 55, 0.2));
+}
+
+/* ── Corner decorations ── */
+.corner-ornament {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: var(--gold);
+  opacity: 0.5;
+}
+.corner-ornament.top-left {
+  top: 8px; left: 8px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+.corner-ornament.top-right {
+  top: 8px; right: 8px;
+  border-top: 2px solid;
+  border-right: 2px solid;
+}
+.corner-ornament.bottom-left {
+  bottom: 8px; left: 8px;
+  border-bottom: 2px solid;
+  border-left: 2px solid;
+}
+.corner-ornament.bottom-right {
+  bottom: 8px; right: 8px;
+  border-bottom: 2px solid;
+  border-right: 2px solid;
+}
+
+/* ── Prose/Narrative paragraphs ── */
+.prose-fantasy p {
+  margin-bottom: 1rem;
+  line-height: 2;
+}
+
+/* ── Slide transitions ── */
+.slide-enter {
+  animation: slideUp 0.5s ease-out forwards;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ── Particle effect ── */
+@keyframes particle-float {
+  0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+  10% { opacity: 0.8; }
+  90% { opacity: 0.3; }
+  100% { transform: translateY(-100vh) rotate(720deg); opacity: 0; }
+}
+
+.particle {
+  position: fixed;
+  width: 3px;
+  height: 3px;
+  background: var(--gold);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: particle-float linear infinite;
+}

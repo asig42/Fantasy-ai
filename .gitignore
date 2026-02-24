@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+data/
+public/images/map/*.png
+public/images/map/*.svg
+public/images/npcs/*.png
+public/images/npcs/*.svg
+public/images/scenes/*.png
+public/images/scenes/*.svg
+*.log
+.DS_Store
