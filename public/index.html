@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fantasy AI TRPG</title>
+  <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Cinzel:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- ============ TITLE SCREEN ============ -->
+  <div id="screen-title" class="screen active">
+    <div class="title-bg">
+      <canvas id="title-particles" class="particles-canvas"></canvas>
+      <div class="title-content">
+        <div class="title-emblem">&#9876;</div>
+        <h1 class="game-title">Fantasy Chronicle</h1>
+        <p class="game-subtitle">AI Text RPG</p>
+        <div class="title-buttons">
+          <button id="btn-start" class="btn-fantasy btn-primary">
+            <span class="btn-icon">&#9733;</span> 게임 시작
+          </button>
+        </div>
+        <p class="title-footer">Powered by Claude AI</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ LOADING SCREEN ============ -->
+  <div id="screen-loading" class="screen">
+    <div class="loading-container">
+      <div class="loading-orb">
+        <div class="orb-inner"></div>
+      </div>
+      <h2 id="loading-title" class="loading-text">세계를 생성하고 있습니다...</h2>
+      <p id="loading-subtitle" class="loading-sub">대륙과 바다, 그리고 운명이 빚어지는 중</p>
+      <div class="loading-bar">
+        <div id="loading-progress" class="loading-fill"></div>
+      </div>
+      <p id="loading-status" class="loading-status">맵 데이터 생성 중...</p>
+    </div>
+  </div>
+
+  <!-- ============ MAP SCREEN ============ -->
+  <div id="screen-map" class="screen">
+    <div class="map-container">
+      <h2 class="section-title"><span class="deco">&#9670;</span> 세계의 지도 <span class="deco">&#9670;</span></h2>
+      <div class="map-frame">
+        <canvas id="map-canvas" width="960" height="540"></canvas>
+      </div>
+      <div id="map-info" class="map-info">
+        <p id="world-name" class="world-name"></p>
+        <p id="world-era" class="world-era"></p>
+      </div>
+      <button id="btn-map-next" class="btn-fantasy btn-primary">다음으로 <span>&#8594;</span></button>
+    </div>
+  </div>
+
+  <!-- ============ NPC SCREEN ============ -->
+  <div id="screen-npcs" class="screen">
+    <div class="npcs-container">
+      <h2 class="section-title"><span class="deco">&#9670;</span> 이 세계의 인물들 <span class="deco">&#9670;</span></h2>
+      <div id="npc-gallery" class="npc-gallery"></div>
+      <button id="btn-npcs-next" class="btn-fantasy btn-primary">다음으로 <span>&#8594;</span></button>
+    </div>
+  </div>
+
+  <!-- ============ NPC DETAIL MODAL ============ -->
+  <div id="npc-modal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content npc-detail">
+      <button class="modal-close">&times;</button>
+      <div class="npc-detail-layout">
+        <div class="npc-detail-portrait">
+          <canvas id="npc-detail-canvas" width="300" height="450"></canvas>
+        </div>
+        <div class="npc-detail-info">
+          <h3 id="npc-detail-name"></h3>
+          <p id="npc-detail-title" class="npc-title-text"></p>
+          <div id="npc-detail-stats" class="npc-stats"></div>
+          <p id="npc-detail-desc" class="npc-desc-text"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ STORY SCREEN ============ -->
+  <div id="screen-story" class="screen">
+    <div class="story-container">
+      <h2 class="section-title"><span class="deco">&#9670;</span> 서 사 <span class="deco">&#9670;</span></h2>
+      <div id="story-narration" class="story-narration"></div>
+      <div id="story-world-desc" class="story-world-desc"></div>
+      <button id="btn-story-next" class="btn-fantasy btn-primary hidden">캐릭터 생성 <span>&#8594;</span></button>
+    </div>
+  </div>
+
+  <!-- ============ CHARACTER CREATION SCREEN ============ -->
+  <div id="screen-character" class="screen">
+    <div class="character-container">
+      <h2 class="section-title"><span class="deco">&#9670;</span> 캐릭터 생성 <span class="deco">&#9670;</span></h2>
+      <div class="char-create-layout">
+        <div class="char-preview">
+          <canvas id="char-preview-canvas" width="300" height="450"></canvas>
+        </div>
+        <div class="char-form">
+          <div class="form-group">
+            <label>이름</label>
+            <input type="text" id="char-name" placeholder="캐릭터의 이름을 입력하세요" maxlength="20">
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>나이</label>
+              <input type="number" id="char-age" value="20" min="14" max="99">
+            </div>
+            <div class="form-group">
+              <label>성별</label>
+              <select id="char-gender">
+                <option value="남성">남성</option>
+                <option value="여성">여성</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>직업</label>
+            <div class="class-grid" id="class-grid">
+              <button class="class-btn" data-class="검사">&#9876; 검사</button>
+              <button class="class-btn" data-class="마법사">&#10031; 마법사</button>
+              <button class="class-btn" data-class="궁수">&#127993; 궁수</button>
+              <button class="class-btn" data-class="성직자">&#10017; 성직자</button>
+              <button class="class-btn" data-class="도적">&#128481; 도적</button>
+              <button class="class-btn" data-class="연금술사">&#9878; 연금술사</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>외모</label>
+            <div class="appearance-options">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="sub-label">머리색</label>
+                  <input type="color" id="char-hair-color" value="#2a1a0a">
+                </div>
+                <div class="form-group">
+                  <label class="sub-label">눈 색</label>
+                  <input type="color" id="char-eye-color" value="#4a7c59">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>배경 스토리</label>
+            <div id="background-options" class="background-options">
+              <p class="bg-loading">직업을 선택하면 배경 스토리가 생성됩니다...</p>
+            </div>
+            <div class="custom-bg-area hidden" id="custom-bg-area">
+              <textarea id="custom-bg-text" placeholder="직접 배경 스토리를 작성하세요..." rows="4"></textarea>
+            </div>
+            <button id="btn-custom-bg" class="btn-small">직접 작성하기</button>
+          </div>
+          <button id="btn-create-char" class="btn-fantasy btn-primary" disabled>모험 시작! <span>&#9733;</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN GAME SCREEN ============ -->
+  <div id="screen-game" class="screen">
+    <div class="game-layout">
+      <!-- Scene Illustration Area (16:9) -->
+      <div class="scene-area">
+        <canvas id="scene-canvas" width="960" height="540"></canvas>
+        <div id="scene-location" class="scene-location-tag"></div>
+        <div id="scene-npc-portraits" class="scene-npc-portraits"></div>
+      </div>
+
+      <!-- Narrative Text Area -->
+      <div class="narrative-area">
+        <div id="narrative-text" class="narrative-text"></div>
+      </div>
+
+      <!-- Choice / Input Area -->
+      <div class="input-area">
+        <div id="choices-container" class="choices-container hidden"></div>
+        <div class="text-input-row">
+          <input type="text" id="player-input" placeholder="행동이나 대사를 입력하세요..." maxlength="200">
+          <button id="btn-send" class="btn-fantasy btn-send">전송</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Side Panel (Map/NPC quick view) -->
+    <button id="btn-side-panel" class="btn-side-toggle">&#9776;</button>
+    <div id="side-panel" class="side-panel hidden">
+      <div class="side-tabs">
+        <button class="side-tab active" data-tab="side-map">지도</button>
+        <button class="side-tab" data-tab="side-npcs">인물</button>
+        <button class="side-tab" data-tab="side-log">기록</button>
+      </div>
+      <div id="side-map" class="side-content active">
+        <canvas id="minimap-canvas" width="400" height="225"></canvas>
+      </div>
+      <div id="side-npcs" class="side-content">
+        <div id="side-npc-list" class="side-npc-list"></div>
+      </div>
+      <div id="side-log" class="side-content">
+        <div id="game-log" class="game-log"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
