@@ -14,6 +14,68 @@ import type {
 const router = Router()
 
 // ================================================================
+// GET /api/config — Get current config status
+// ================================================================
+router.get('/config', (_req: Request, res: Response) => {
+  const hasApiKey = !!claude.getAnthropicApiKey()
+  const hasFalKey = !!process.env.FAL_KEY
+  res.json({ hasApiKey, hasFalKey })
+})
+
+// ================================================================
+// POST /api/config — Set API keys
+// ================================================================
+router.post('/config', async (req: Request, res: Response) => {
+  const { anthropicApiKey, falKey } = req.body as { anthropicApiKey?: string; falKey?: string }
+
+  if (!anthropicApiKey?.trim()) {
+    return res.status(400).json({ error: 'anthropicApiKey is required' })
+  }
+
+  // Test the key
+  const valid = await claude.testApiKey(anthropicApiKey.trim())
+  if (!valid) {
+    return res.status(400).json({ error: 'API 키가 유효하지 않습니다. Anthropic 콘솔에서 키를 확인해주세요.' })
+  }
+
+  // Apply keys
+  claude.setAnthropicApiKey(anthropicApiKey.trim())
+  if (falKey?.trim()) {
+    process.env.FAL_KEY = falKey.trim()
+  }
+
+  // Persist to config file
+  await storage.saveConfig({
+    anthropicApiKey: anthropicApiKey.trim(),
+    falKey: falKey?.trim(),
+  })
+
+  res.json({ success: true, message: 'API 키가 저장되었습니다.' })
+})
+
+// ================================================================
+// GET /api/sessions — List all saved sessions
+// ================================================================
+router.get('/sessions', async (_req: Request, res: Response) => {
+  const sessions = await storage.listSessions()
+  res.json(sessions)
+})
+
+// ================================================================
+// POST /api/session/:id/resume — Resume a saved session
+// ================================================================
+router.get('/session/:id/resume', async (req: Request, res: Response) => {
+  const session = await storage.loadSession(req.params.id)
+  if (!session) return res.status(404).json({ error: 'Session not found' })
+
+  const world = await storage.loadWorld()
+  const npcs = await storage.loadNPCs()
+  const narrative = await storage.loadNarrative()
+
+  res.json({ session, world, npcs, narrative })
+})
+
+// ================================================================
 // GET /api/status — Health check + initialization state
 // ================================================================
 router.get('/status', async (_req: Request, res: Response) => {

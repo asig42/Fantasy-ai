@@ -100,6 +100,62 @@ export async function imageExists(filePath: string): Promise<boolean> {
   return fs.pathExists(filePath)
 }
 
+// ---------- Config ----------
+export interface AppConfig {
+  anthropicApiKey?: string
+  falKey?: string
+}
+
+export async function saveConfig(config: AppConfig): Promise<void> {
+  await fs.ensureDir(DATA_DIR)
+  await fs.writeJson(path.join(DATA_DIR, 'config.json'), config, { spaces: 2 })
+}
+
+export async function loadConfig(): Promise<AppConfig> {
+  const filePath = path.join(DATA_DIR, 'config.json')
+  if (!(await fs.pathExists(filePath))) return {}
+  return fs.readJson(filePath)
+}
+
+// ---------- Session List ----------
+export interface SessionSummary {
+  id: string
+  characterName: string
+  characterClass: string
+  currentLocation: string
+  level: number
+  updatedAt: number
+  createdAt: number
+}
+
+export async function listSessions(): Promise<SessionSummary[]> {
+  const sessionsDir = path.join(DATA_DIR, 'sessions')
+  if (!(await fs.pathExists(sessionsDir))) return []
+
+  const files = await fs.readdir(sessionsDir)
+  const summaries: SessionSummary[] = []
+
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue
+    try {
+      const session: GameSession = await fs.readJson(path.join(sessionsDir, file))
+      summaries.push({
+        id: session.id,
+        characterName: session.character.name,
+        characterClass: session.character.characterClass,
+        currentLocation: session.currentLocation,
+        level: session.character.stats.level,
+        updatedAt: session.updatedAt,
+        createdAt: session.createdAt,
+      })
+    } catch {
+      // skip corrupt files
+    }
+  }
+
+  return summaries.sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 // ---------- Init Status ----------
 export async function isWorldInitialized(): Promise<boolean> {
   return fs.pathExists(path.join(DATA_DIR, 'world.json'))

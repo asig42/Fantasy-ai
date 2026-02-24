@@ -7,6 +7,9 @@
     "server": "nodemon --exec ts-node --project tsconfig.server.json server/index.ts",
     "client": "vite",
     "build": "vite build",
+    "build:server": "tsc --project tsconfig.server.json",
+    "build:all": "npm run build && npm run build:server",
+    "start": "node dist/server/server/index.js",
     "preview": "vite preview"
   },
   "dependencies": {

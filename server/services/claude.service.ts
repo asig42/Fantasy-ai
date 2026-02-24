@@ -9,7 +9,35 @@ import type {
   PlayerCharacter,
 } from '../../src/types/game'
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+let _apiKey: string | undefined = process.env.ANTHROPIC_API_KEY
+
+export function setAnthropicApiKey(key: string) {
+  _apiKey = key
+  process.env.ANTHROPIC_API_KEY = key
+}
+
+export function getAnthropicApiKey(): string | undefined {
+  return _apiKey
+}
+
+function getClient(): Anthropic {
+  if (!_apiKey) throw new Error('ANTHROPIC_API_KEY가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.')
+  return new Anthropic({ apiKey: _apiKey })
+}
+
+export async function testApiKey(key: string): Promise<boolean> {
+  try {
+    const testClient = new Anthropic({ apiKey: key })
+    await testClient.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 10,
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    return true
+  } catch {
+    return false
+  }
+}
 
 // ================================================================
 // 1. WORLD GENERATION
@@ -17,7 +45,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 export async function generateWorld(): Promise<WorldData> {
   console.log('[Claude] Generating world...')
 
-  const stream = await client.messages.stream({
+  const stream = await getClient().messages.stream({
     model: 'claude-opus-4-6',
     max_tokens: 4000,
     thinking: { type: 'adaptive' },
@@ -88,7 +116,7 @@ export async function generateNPCs(world: WorldData): Promise<NPC[]> {
 
   const kingdomsList = world.continents.flatMap(c => c.majorKingdoms).join(', ')
 
-  const stream = await client.messages.stream({
+  const stream = await getClient().messages.stream({
     model: 'claude-opus-4-6',
     max_tokens: 8000,
     thinking: { type: 'adaptive' },
@@ -151,7 +179,7 @@ JSON 배열 형식:
 export async function generateNarrative(world: WorldData): Promise<string> {
   console.log('[Claude] Generating narrative...')
 
-  const stream = await client.messages.stream({
+  const stream = await getClient().messages.stream({
     model: 'claude-opus-4-6',
     max_tokens: 3000,
     thinking: { type: 'adaptive' },
@@ -206,7 +234,7 @@ export async function generateCharacterBackgrounds(
     '팔라딘': '정의와 빛을 위해 싸우는 성스러운 기사',
   }
 
-  const stream = await client.messages.stream({
+  const stream = await getClient().messages.stream({
     model: 'claude-opus-4-6',
     max_tokens: 2000,
     system: `반드시 유효한 JSON만 반환하세요. 설명 없이 순수 JSON 배열만 출력하세요.`,
@@ -297,7 +325,7 @@ ${narrative.slice(0, 500)}...
 
 현재 위치: ${currentLocation}`
 
-  const stream = await client.messages.stream({
+  const stream = await getClient().messages.stream({
     model: 'claude-opus-4-6',
     max_tokens: 4000,
     thinking: { type: 'adaptive' },
@@ -346,7 +374,7 @@ export async function generateInitialScene(
 ): Promise<ClaudeGameResponse> {
   console.log('[Claude] Generating initial scene...')
 
-  const stream = await client.messages.stream({
+  const stream = await getClient().messages.stream({
     model: 'claude-opus-4-6',
     max_tokens: 3000,
     thinking: { type: 'adaptive' },

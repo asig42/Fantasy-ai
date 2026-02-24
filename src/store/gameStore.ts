@@ -11,6 +11,16 @@ import type {
   BackgroundOption,
 } from '../types/game'
 
+export interface SessionSummary {
+  id: string
+  characterName: string
+  characterClass: string
+  currentLocation: string
+  level: number
+  updatedAt: number
+  createdAt: number
+}
+
 interface GameStore {
   // Phase
   phase: GamePhase
@@ -35,6 +45,10 @@ interface GameStore {
   isProcessing: boolean
   error: string | null
 
+  // Config
+  hasApiKey: boolean
+  savedSessions: SessionSummary[]
+
   // Actions
   initGame: () => Promise<void>
   loadGameData: () => Promise<void>
@@ -49,6 +63,9 @@ interface GameStore {
   sendAction: (input: string) => Promise<void>
   resetGame: () => Promise<void>
   setError: (err: string | null) => void
+  saveApiKey: (anthropicKey: string, falKey?: string) => Promise<void>
+  loadSessions: () => Promise<void>
+  resumeSession: (sessionId: string) => Promise<void>
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -71,7 +88,64 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isProcessing: false,
   error: null,
 
+  hasApiKey: false,
+  savedSessions: [],
+
   setError: (error) => set({ error }),
+
+  // ────────────────────────────────────────
+  saveApiKey: async (anthropicKey: string, falKey?: string) => {
+    set({ isLoading: true, error: null })
+    try {
+      await axios.post('/api/config', { anthropicApiKey: anthropicKey, falKey })
+      set({ hasApiKey: true, isLoading: false })
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err)
+        ? err.response?.data?.error ?? err.message
+        : String(err)
+      set({ error: message, isLoading: false })
+    }
+  },
+
+  // ────────────────────────────────────────
+  loadSessions: async () => {
+    try {
+      const res = await axios.get('/api/sessions')
+      set({ savedSessions: res.data })
+    } catch {
+      // ignore
+    }
+  },
+
+  // ────────────────────────────────────────
+  resumeSession: async (sessionId: string) => {
+    set({ isLoading: true, error: null })
+    try {
+      const res = await axios.get(`/api/session/${sessionId}/resume`)
+      const { session, world, npcs, narrative } = res.data
+
+      const messages: GameMessage[] = session.messages.map((m: GameMessage) => m)
+
+      set({
+        sessionId: session.id,
+        character: session.character,
+        messages,
+        currentLocation: session.currentLocation,
+        currentScene: session.currentScene ?? null,
+        world,
+        npcs,
+        narrative: narrative ?? '',
+        mapImageUrl: world?.mapImageUrl ?? null,
+        isLoading: false,
+        phase: 'game',
+      })
+    } catch (err: unknown) {
+      const message = axios.isAxiosError(err)
+        ? err.response?.data?.error ?? err.message
+        : String(err)
+      set({ error: `불러오기 실패: ${message}`, isLoading: false })
+    }
+  },
 
   // ────────────────────────────────────────
   initGame: async () => {
@@ -108,6 +182,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // ────────────────────────────────────────
   loadGameData: async () => {
     try {
+      // Check API key config
+      const configRes = await axios.get('/api/config')
+      set({ hasApiKey: configRes.data.hasApiKey })
+
+      // Load saved sessions list
+      await get().loadSessions()
+
       const statusRes = await axios.get('/api/status')
       if (!statusRes.data.initialized) return
 
