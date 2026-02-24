@@ -136,15 +136,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // ── Save API key ────────────────────────────────────────────
   saveApiKey: async (anthropicKey: string, falKey?: string) => {
-    set({ isLoading: true, error: null })
+    set({ error: null })
     try {
-      await axios.post('/api/config', { anthropicApiKey: anthropicKey, falKey })
-      set({ hasApiKey: true, isLoading: false })
+      await axios.post('/api/config', { anthropicApiKey: anthropicKey, falKey }, { timeout: 30000 })
+      set({ hasApiKey: true })
     } catch (err: unknown) {
       const message = axios.isAxiosError(err)
-        ? err.response?.data?.error ?? err.message
+        ? (err.code === 'ECONNABORTED'
+          ? 'API 키 검증 시간 초과. 네트워크 연결을 확인해주세요.'
+          : err.response?.data?.error ?? err.message)
         : String(err)
-      set({ error: message, isLoading: false })
+      throw new Error(message)
     }
   },
 

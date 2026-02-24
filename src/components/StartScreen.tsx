@@ -48,8 +48,9 @@ export default function StartScreen() {
         setShowApiSetup(false)
         setKeyMessage('')
       }, 1500)
-    } catch {
-      setKeyMessage('API 키 저장 실패')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'API 키 저장 실패'
+      setKeyMessage(msg)
     }
     setIsSavingKey(false)
   }
