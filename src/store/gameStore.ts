@@ -41,6 +41,20 @@ function lsDel(key: string) {
   try { localStorage.removeItem(key) } catch { /* ignore */ }
 }
 
+// ─── Safe error message extraction ────────────────────────────
+function extractMessage(err: unknown): string {
+  if (axios.isAxiosError(err)) {
+    if (err.code === 'ECONNABORTED') return 'API 요청 시간 초과. 네트워크 연결을 확인해주세요.'
+    const d = err.response?.data
+    if (typeof d?.error === 'string') return d.error
+    if (typeof d?.message === 'string') return d.message
+    if (typeof d === 'string' && d.length < 200) return d
+    return err.message
+  }
+  if (err instanceof Error) return err.message
+  return String(err)
+}
+
 export interface SessionSummary {
   id: string
   characterName: string
@@ -141,12 +155,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       await axios.post('/api/config', { anthropicApiKey: anthropicKey, falKey }, { timeout: 30000 })
       set({ hasApiKey: true })
     } catch (err: unknown) {
-      const message = axios.isAxiosError(err)
-        ? (err.code === 'ECONNABORTED'
-          ? 'API 키 검증 시간 초과. 네트워크 연결을 확인해주세요.'
-          : err.response?.data?.error ?? err.message)
-        : String(err)
-      throw new Error(message)
+      throw new Error(extractMessage(err))
     }
   },
 
@@ -246,14 +255,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       set({ isLoading: false, phase: 'worldmap' })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message :
-        (axios.isAxiosError(err) ? err.response?.data?.error : String(err))
-      // Mark the currently loading step as error
       set(state => ({
         loadingSteps: state.loadingSteps.map(s =>
           s.status === 'loading' ? { ...s, status: 'error' } : s
         ),
-        error: `게임 초기화 실패: ${message}`,
+        error: `게임 초기화 실패: ${extractMessage(err)}`,
         isLoading: false,
         phase: 'start',
       }))
@@ -297,8 +303,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       })
       set({ backgroundOptions: res.data.backgrounds, isLoading: false })
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err)
-      set({ error: `배경 생성 실패: ${message}`, isLoading: false })
+      set({ error: `배경 생성 실패: ${extractMessage(err)}`, isLoading: false })
     }
   },
 
@@ -371,9 +376,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       get().loadSessions()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message :
-        (axios.isAxiosError(err) ? err.response?.data?.error : String(err))
-      set({ error: `세션 생성 실패: ${message}`, isLoading: false })
+      set({ error: `세션 생성 실패: ${extractMessage(err)}`, isLoading: false })
     }
   },
 
@@ -469,9 +472,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message :
-        (axios.isAxiosError(err) ? err.response?.data?.error : String(err))
-      set({ error: `행동 처리 실패: ${message}`, isProcessing: false })
+      set({ error: `행동 처리 실패: ${extractMessage(err)}`, isProcessing: false })
     }
   },
 
