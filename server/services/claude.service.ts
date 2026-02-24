@@ -27,18 +27,13 @@ function getClient(): Anthropic {
 
 export async function testApiKey(key: string): Promise<boolean> {
   try {
-    const testClient = new Anthropic({ apiKey: key })
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('timeout')), 20000)
-    )
-    await Promise.race([
-      testClient.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 10,
-        messages: [{ role: 'user', content: 'hi' }],
-      }),
-      timeout,
-    ])
+    // Use built-in SDK timeout to avoid unhandled rejections from Promise.race
+    const testClient = new Anthropic({ apiKey: key, timeout: 20000 })
+    await testClient.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 10,
+      messages: [{ role: 'user', content: 'hi' }],
+    })
     return true
   } catch {
     return false

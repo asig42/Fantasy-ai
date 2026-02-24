@@ -39,31 +39,36 @@ router.get('/config', (_req: Request, res: Response) => {
 // POST /api/config — Set API keys (local dev only)
 // ================================================================
 router.post('/config', async (req: Request, res: Response) => {
-  const { anthropicApiKey, falKey } = req.body as { anthropicApiKey?: string; falKey?: string }
-
-  if (!anthropicApiKey?.trim()) {
-    return res.status(400).json({ error: 'anthropicApiKey is required' })
-  }
-
-  const valid = await claude.testApiKey(anthropicApiKey.trim())
-  if (!valid) {
-    return res.status(400).json({ error: 'API 키가 유효하지 않습니다. Anthropic 콘솔에서 키를 확인해주세요.' })
-  }
-
-  claude.setAnthropicApiKey(anthropicApiKey.trim())
-  if (falKey?.trim()) {
-    process.env.FAL_KEY = falKey.trim()
-  }
-
-  // Persist to disk only if storage is available (local dev)
   try {
-    const { saveConfig } = await import('../services/storage.service')
-    await saveConfig({ anthropicApiKey: anthropicApiKey.trim(), falKey: falKey?.trim() })
-  } catch {
-    // Vercel: no persistent storage, that's fine
-  }
+    const { anthropicApiKey, falKey } = req.body as { anthropicApiKey?: string; falKey?: string }
 
-  res.json({ success: true, message: 'API 키가 저장되었습니다.' })
+    if (!anthropicApiKey?.trim()) {
+      return res.status(400).json({ error: 'anthropicApiKey is required' })
+    }
+
+    const valid = await claude.testApiKey(anthropicApiKey.trim())
+    if (!valid) {
+      return res.status(400).json({ error: 'API 키가 유효하지 않습니다. Anthropic 콘솔에서 키를 확인해주세요.' })
+    }
+
+    claude.setAnthropicApiKey(anthropicApiKey.trim())
+    if (falKey?.trim()) {
+      process.env.FAL_KEY = falKey.trim()
+    }
+
+    // Persist to disk only if storage is available (local dev)
+    try {
+      const { saveConfig } = await import('../services/storage.service')
+      await saveConfig({ anthropicApiKey: anthropicApiKey.trim(), falKey: falKey?.trim() })
+    } catch {
+      // Vercel: no persistent storage, that's fine
+    }
+
+    res.json({ success: true, message: 'API 키가 저장되었습니다.' })
+  } catch (err) {
+    console.error('[API] Config error:', err)
+    res.status(500).json({ error: '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' })
+  }
 })
 
 // ================================================================
