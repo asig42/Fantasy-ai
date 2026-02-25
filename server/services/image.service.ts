@@ -168,7 +168,7 @@ export async function generateSceneImage(sceneDescription: string): Promise<stri
 
   try {
     fal.config({ credentials: falKey })
-    const prompt = `anime style illustration, high quality, 16:9 aspect ratio, fantasy RPG scene, ${sceneDescription}, dramatic atmospheric lighting, vibrant detailed colors, cinematic composition, visual novel background art style`
+    const prompt = `anime style illustration, high quality, 16:9 aspect ratio, fantasy RPG scene, ${sceneDescription}, character-focused composition, one or more characters prominently visible in the foreground, full body or upper body characters in frame, dramatic atmospheric lighting, vibrant detailed colors, cinematic composition, visual novel art style`
 
     const result = await fal.subscribe('fal-ai/flux/schnell', {
       input: {
