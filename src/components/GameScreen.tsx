@@ -331,7 +331,7 @@ export default function GameScreen() {
             ref={inputRef}
             className="input-fantasy flex-1 rounded-sm resize-none text-sm"
             rows={2}
-            style={{ minHeight: '60px', maxHeight: '120px' }}
+            style={{ minHeight: '60px', maxHeight: '120px', fontSize: '16px' }}
             placeholder="행동이나 대화를 입력하세요... (Enter로 전송)"
             value={input}
             onChange={e => setInput(e.target.value)}
