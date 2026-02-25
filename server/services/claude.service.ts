@@ -301,7 +301,7 @@ JSON 배열:
 // falling back to truncated content. Allows sending many more turns
 // without blowing up the token budget.
 function buildHistoryText(history: GameMessage[]): string {
-  return history.slice(-20).map(m => {
+  return history.slice(-12).map(m => {
     if (m.role === 'player') return `[플레이어] ${m.content}`
     const prefix = m.role === 'npc' ? `[${m.npcName || 'NPC'}]` : '[나레이터]'
     const text = m.summary ?? m.content.slice(0, 120)
@@ -311,7 +311,7 @@ function buildHistoryText(history: GameMessage[]): string {
 
 // The extra JSON fields we ask Claude to return alongside narration
 const GM_JSON_FORMAT = `{
-  "narration": "웹소설 스타일의 서술 (4-6문단, 대사 포함, 한국어, 최소 400자)",
+  "narration": "웹소설 스타일의 서술 (3-4문단, 대사 포함, 한국어, 최소 250자)",
   "summary": "이번 턴 핵심 요약 (한국어 1-2문장, 50자 이내): 플레이어 행동 결과와 중요 정보만",
   "scene_description": "English description for image generation: location, atmosphere, characters present, time of day, weather, mood (max 60 words)",
   "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
@@ -349,6 +349,15 @@ const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
     {"emotion": "serious", "description": "focused gaze"}
   ]
 }`
+
+// Auto-select model based on turn complexity.
+// Sonnet for dramatic/combat moments and game opening; Haiku for routine turns.
+function selectModel(playerInput: string, history: GameMessage[]): string {
+  if (history.length < 6) return 'claude-sonnet-4-6'
+  const dramatic = ['전투', '싸우', '공격', '죽', '사망', '탈출', '위기', '마법', '보스', '배신', '비밀']
+  if (dramatic.some(kw => playerInput.includes(kw))) return 'claude-sonnet-4-6'
+  return 'claude-haiku-4-5-20251001'
+}
 
 function buildSystemPrompt(
   world: WorldData, npcs: NPC[], narrative: string,
@@ -419,9 +428,9 @@ ${GM_JSON_FORMAT}
 ${NEW_NPC_RULES}`
 
   const msg = await getClient().messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
-    system: buildSystemPrompt(world, npcs, narrative, character, currentLocation),
+    model: selectModel(playerInput, history),
+    max_tokens: 6000,
+    system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as Parameters<typeof getClient().messages.create>[0]['system'],
     messages: [{ role: 'user', content: userMessage }],
   })
 
@@ -460,9 +469,9 @@ ${GM_JSON_FORMAT}
 ${NEW_NPC_RULES}`
 
   const stream = getClient().messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
-    system: buildSystemPrompt(world, npcs, narrative, character, currentLocation),
+    model: selectModel(playerInput, history),
+    max_tokens: 6000,
+    system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as Parameters<typeof getClient().messages.create>[0]['system'],
     messages: [{ role: 'user', content: userMessage }],
   })
 

@@ -121,7 +121,7 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
   if (msg.role === 'player') {
     return (
       <div className="flex justify-end">
-        <div className="max-w-lg px-4 py-3 rounded-sm"
+        <div className="max-w-xs sm:max-w-lg px-4 py-3 rounded-sm"
           style={{
             background: 'rgba(212,175,55,0.08)',
             border: '1px solid rgba(212,175,55,0.2)',
@@ -137,32 +137,48 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
 
   return (
     <div className="animate-fade-in">
-      {/* Scene image for this message */}
+      {/* Scene image */}
       {msg.sceneImageUrl && (
-        <div className="mb-4">
+        <div className="mb-3">
           <SceneImage url={msg.sceneImageUrl} alt="Scene" />
         </div>
       )}
 
-      {/* Text + NPC portrait */}
-      <div className={`flex gap-4 ${npc ? 'items-end' : ''}`}>
+      {/* ── Desktop (sm+): portrait column on left + text panel ── */}
+      <div className={`hidden sm:flex gap-4 ${npc ? 'items-end' : ''}`}>
         {npc && (
           <div className="flex-shrink-0" style={{ width: '120px' }}>
             <NpcPortrait npc={npc} emotion={msg.npcEmotion} />
           </div>
         )}
-
-        <div className="flex-1 fantasy-panel rounded-sm p-5 relative">
-          {/* Role indicator */}
+        <div className="flex-1 fantasy-panel rounded-sm p-5">
           <p className="text-xs mb-3 font-cinzel tracking-widest"
             style={{ color: npc ? 'rgba(212,175,55,0.6)' : 'rgba(160,144,112,0.4)' }}>
             {npc ? `◆ ${npc.name}` : '◆ 나레이터'}
           </p>
+          <div className="narrative-text text-sm">{formattedContent}</div>
+        </div>
+      </div>
 
-          <div className="narrative-text text-sm">
-            {formattedContent}
+      {/* ── Mobile: chat-style single column ── */}
+      <div className="sm:hidden fantasy-panel rounded-sm p-4">
+        <div className="flex items-center gap-2 mb-3">
+          {npc?.portraitUrl && (
+            <img src={npc.portraitUrl} alt={npc.name}
+              className="w-8 h-8 rounded-full object-cover flex-shrink-0"
+              style={{ objectPosition: 'top', border: '1px solid rgba(212,175,55,0.35)' }} />
+          )}
+          <div className="min-w-0">
+            <p className="text-xs font-cinzel tracking-widest leading-tight"
+              style={{ color: npc ? 'rgba(212,175,55,0.7)' : 'rgba(160,144,112,0.45)' }}>
+              {npc ? `◆ ${npc.name}` : '◆ 나레이터'}
+            </p>
+            {npc && msg.npcEmotion && msg.npcEmotion !== 'neutral' && (
+              <p className="text-xs" style={{ color: 'rgba(160,144,112,0.45)' }}>[{msg.npcEmotion}]</p>
+            )}
           </div>
         </div>
+        <div className="narrative-text text-sm">{formattedContent}</div>
       </div>
     </div>
   )
@@ -354,9 +370,9 @@ export default function GameScreen() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* NPC side panel (when in dialogue) */}
+        {/* NPC side panel — desktop only */}
         {currentNpc && (
-          <div className="w-40 flex-shrink-0 flex flex-col items-center justify-end pb-4 px-2"
+          <div className="hidden sm:flex w-40 flex-shrink-0 flex-col items-center justify-end pb-4 px-2"
             style={{ borderLeft: '1px solid #1a1020', background: 'rgba(5,5,10,0.7)' }}>
             <NpcPortrait npc={currentNpc} emotion={latestMsg?.npcEmotion} />
           </div>
