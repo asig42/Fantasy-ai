@@ -7,6 +7,14 @@ import { ensureDirs, loadConfig } from './services/storage.service'
 import { setAnthropicApiKey } from './services/claude.service'
 import app from './app'
 
+// Prevent server crash from unhandled rejections
+process.on('unhandledRejection', (reason) => {
+  console.error('[Server] Unhandled Promise Rejection:', reason)
+})
+process.on('uncaughtException', (err) => {
+  console.error('[Server] Uncaught Exception:', err)
+})
+
 const PORT = parseInt(process.env.PORT ?? '3000', 10)
 
 async function start() {
