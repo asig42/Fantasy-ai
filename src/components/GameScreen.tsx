@@ -176,35 +176,41 @@ function StatsBar() {
   const hpPct = (character.stats.hp / character.stats.maxHp) * 100
 
   return (
-    <div className="flex items-center gap-4 px-4 py-2 text-xs"
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-xs"
       style={{ background: 'rgba(5,5,10,0.95)', borderBottom: '1px solid #1a1020' }}>
-      <div className="flex items-center gap-2">
-        <span style={{ color: 'rgba(212,175,55,0.6)' }}>⚔</span>
-        <span className="font-cinzel" style={{ color: '#D4AF37' }}>
-          {character.name}
-        </span>
-        <span style={{ color: 'rgba(160,144,112,0.5)' }}>
-          Lv.{character.stats.level} {character.characterClass}
-        </span>
-      </div>
 
-      <div className="flex items-center gap-1.5 ml-2">
-        <span style={{ color: '#e74c3c' }}>♥</span>
-        <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,0,0,0.1)' }}>
-          <div className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${hpPct}%`, background: hpPct > 50 ? '#e74c3c' : hpPct > 25 ? '#e67e22' : '#c0392b' }} />
+      {/* Row 1: Name + HP + Gold (always together) */}
+      <div className="flex items-center gap-4 flex-1 min-w-0">
+        <div className="flex items-center gap-2 shrink-0">
+          <span style={{ color: 'rgba(212,175,55,0.6)' }}>⚔</span>
+          <span className="font-cinzel" style={{ color: '#D4AF37' }}>
+            {character.name}
+          </span>
+          <span style={{ color: 'rgba(160,144,112,0.5)' }}>
+            Lv.{character.stats.level} {character.characterClass}
+          </span>
         </div>
-        <span style={{ color: 'rgba(232,213,176,0.6)' }}>{character.stats.hp}/{character.stats.maxHp}</span>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span style={{ color: '#e74c3c' }}>♥</span>
+          <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,0,0,0.1)' }}>
+            <div className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${hpPct}%`, background: hpPct > 50 ? '#e74c3c' : hpPct > 25 ? '#e67e22' : '#c0392b' }} />
+          </div>
+          <span style={{ color: 'rgba(232,213,176,0.6)' }}>{character.stats.hp}/{character.stats.maxHp}</span>
+        </div>
+
+        <div className="flex items-center gap-1 shrink-0" style={{ color: 'rgba(212,175,55,0.6)' }}>
+          <span>💰</span>
+          <span style={{ color: 'rgba(232,213,176,0.6)' }}>{character.stats.gold}G</span>
+        </div>
       </div>
 
-      <div className="flex items-center gap-1" style={{ color: 'rgba(212,175,55,0.6)' }}>
-        <span>💰</span>
-        <span style={{ color: 'rgba(232,213,176,0.6)' }}>{character.stats.gold}G</span>
-      </div>
-
-      <div className="flex-1 text-right">
+      {/* Row 2 on mobile / inline on desktop: Location */}
+      <div className="w-full sm:w-auto sm:ml-auto sm:text-right truncate"
+        style={{ color: 'rgba(232,213,176,0.7)' }}>
         <span style={{ color: 'rgba(160,144,112,0.5)' }}>📍 </span>
-        <span style={{ color: 'rgba(232,213,176,0.7)' }}>{currentLocation}</span>
+        <span>{currentLocation}</span>
       </div>
     </div>
   )
