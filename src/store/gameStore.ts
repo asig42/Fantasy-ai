@@ -118,6 +118,7 @@ interface GameStore {
 
   isLoading: boolean
   isProcessing: boolean
+  streamingContent: string
   error: string | null
 
   hasApiKey: boolean
@@ -160,6 +161,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   npcPortraitCache: {},
   isLoading: false,
   isProcessing: false,
+  streamingContent: '',
   error: null,
 
   hasApiKey: false,
@@ -431,7 +433,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  // ── Send action ───────────────────────────────────────────
+  // ── Send action (streaming SSE) ───────────────────────────
   sendAction: async (input: string) => {
     const {
       sessionId, world, npcs, narrative, character, messages, currentLocation,
@@ -439,7 +441,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } = get()
     if (!world || !character) return
 
-    set({ isProcessing: true, error: null })
+    set({ isProcessing: true, streamingContent: '', error: null })
 
     const playerMsg: GameMessage = {
       id: `msg_${Date.now()}_player`,
@@ -450,109 +452,139 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set(state => ({ messages: [...state.messages, playerMsg] }))
 
     try {
-      const res = await axios.post('/api/game/action', {
-        worldData: world,
-        npcs,
-        narrative,
-        character,
-        history: messages.slice(-15),
-        input,
-        currentLocation,
-        sceneTagCache: sceneImageCache,
-        npcPortraitCache,
+      const res = await fetch('/api/game/action/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          worldData: world,
+          npcs,
+          narrative,
+          character,
+          history: messages.slice(-10),
+          input,
+          currentLocation,
+          sceneTagCache: sceneImageCache,
+          npcPortraitCache,
+        }),
       })
 
-      const {
-        narration, sceneImageUrl, sceneTag,
-        currentLocation: newLoc, npcSpeaking, gameOver, newNpc,
-      } = res.data
-
-      // Resolve final scene image URL: use new URL, or fall back to previous
-      const resolvedSceneUrl: string | undefined =
-        sceneImageUrl ?? get().currentScene?.imageUrl ?? undefined
-
-      // Update scene image cache if a new image was generated
-      const updatedSceneCache = { ...sceneImageCache }
-      if (sceneImageUrl && sceneTag) {
-        updatedSceneCache[sceneTag] = sceneImageUrl
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '서버 오류' }))
+        throw new Error(err.error ?? '서버 오류')
       }
 
-      // Update NPC portrait cache if a new portrait was generated
-      const updatedNpcCache = { ...npcPortraitCache }
-      if (npcSpeaking?.portraitUrl && npcSpeaking?.id && npcSpeaking?.emotion) {
-        const cacheKey = `${npcSpeaking.id}_${npcSpeaking.emotion}`
-        updatedNpcCache[cacheKey] = npcSpeaking.portraitUrl
-      }
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let sseBuffer = ''
 
-      const responseMsg: GameMessage = {
-        id: `msg_${Date.now()}_response`,
-        role: npcSpeaking ? 'npc' : 'narrator',
-        content: narration,
-        npcId: npcSpeaking?.id,
-        npcName: npcSpeaking?.name,
-        npcEmotion: npcSpeaking?.emotion,
-        timestamp: Date.now(),
-        sceneImageUrl: resolvedSceneUrl,
-      }
+      const processEvent = (data: Record<string, unknown>) => {
+        if (data.type === 'chunk') {
+          set(state => ({ streamingContent: state.streamingContent + (data.content as string) }))
+        } else if (data.type === 'done') {
+          const {
+            narration, sceneImageUrl, sceneTag,
+            currentLocation: newLoc, npcSpeaking, gameOver, newNpc,
+          } = data as {
+            narration: string
+            sceneImageUrl: string | null
+            sceneTag: string
+            currentLocation: string
+            npcSpeaking: { id: string; name: string; title: string; emotion: string; portraitUrl: string } | null
+            gameOver: boolean
+            newNpc: NPC | null
+          }
 
-      const newMessages = [...get().messages, responseMsg]
-      const updatedLocation = newLoc ?? currentLocation
-      const newScene: SceneData = {
-        description: '',
-        imageUrl: resolvedSceneUrl,
-        currentLocation: updatedLocation,
-        npcsPresent: [],
-      }
+          const resolvedSceneUrl: string | undefined =
+            sceneImageUrl ?? get().currentScene?.imageUrl ?? undefined
 
-      set({
-        messages: newMessages,
-        currentLocation: updatedLocation,
-        currentScene: newScene,
-        sceneImageCache: updatedSceneCache,
-        npcPortraitCache: updatedNpcCache,
-        isProcessing: false,
-        ...(gameOver ? { phase: 'start' } : {}),
-      })
+          const updatedSceneCache = { ...sceneImageCache }
+          if (sceneImageUrl && sceneTag) updatedSceneCache[sceneTag] = sceneImageUrl
 
-      // 새로 즉석 생성된 NPC를 목록에 추가 (중복 방지)
-      if (newNpc) {
-        set(state => {
-          const exists = state.npcs.some(n => n.id === newNpc.id)
-          if (exists) return {}
-          const updatedNpcs = [...state.npcs, newNpc]
-          lsSet(LS_NPCS, updatedNpcs)
-          return { npcs: updatedNpcs }
-        })
-      }
+          const updatedNpcCache = { ...npcPortraitCache }
+          if (npcSpeaking?.portraitUrl && npcSpeaking?.id && npcSpeaking?.emotion) {
+            updatedNpcCache[`${npcSpeaking.id}_${npcSpeaking.emotion}`] = npcSpeaking.portraitUrl
+          }
 
-      if (npcSpeaking?.portraitUrl) {
-        set(state => ({
-          npcs: state.npcs.map(n =>
-            n.id === npcSpeaking.id ? { ...n, portraitUrl: npcSpeaking.portraitUrl } : n
-          ),
-        }))
-      }
+          const responseMsg: GameMessage = {
+            id: `msg_${Date.now()}_response`,
+            role: npcSpeaking ? 'npc' : 'narrator',
+            content: narration,
+            npcId: npcSpeaking?.id,
+            npcName: npcSpeaking?.name,
+            npcEmotion: npcSpeaking?.emotion,
+            timestamp: Date.now(),
+            sceneImageUrl: resolvedSceneUrl,
+          }
 
-      // Auto-save to localStorage
-      if (sessionId) {
-        const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
-        const existing = sessions[sessionId]
-        if (existing) {
-          const updatedSession = {
-            ...existing,
+          const newMessages = [...get().messages, responseMsg]
+          const updatedLocation = newLoc ?? currentLocation
+          const newScene: SceneData = {
+            description: '',
+            imageUrl: resolvedSceneUrl,
+            currentLocation: updatedLocation,
+            npcsPresent: [],
+          }
+
+          set({
             messages: newMessages,
             currentLocation: updatedLocation,
             currentScene: newScene,
-            updatedAt: Date.now(),
+            sceneImageCache: updatedSceneCache,
+            npcPortraitCache: updatedNpcCache,
+            isProcessing: false,
+            streamingContent: '',
+            ...(gameOver ? { phase: 'start' } : {}),
+          })
+
+          if (newNpc) {
+            set(state => {
+              if (state.npcs.some(n => n.id === (newNpc as NPC).id)) return {}
+              const updatedNpcs = [...state.npcs, newNpc as NPC]
+              lsSet(LS_NPCS, updatedNpcs)
+              return { npcs: updatedNpcs }
+            })
           }
-          sessions[sessionId] = updatedSession
-          lsSet(LS_SESSIONS, sessions)
-          saveSessionToServer(updatedSession)
-          get().loadSessions()
+
+          if (npcSpeaking?.portraitUrl) {
+            set(state => ({
+              npcs: state.npcs.map(n =>
+                n.id === npcSpeaking.id ? { ...n, portraitUrl: npcSpeaking.portraitUrl } : n
+              ),
+            }))
+          }
+
+          if (sessionId) {
+            const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
+            const existing = sessions[sessionId]
+            if (existing) {
+              const updatedSession = { ...existing, messages: newMessages, currentLocation: updatedLocation, currentScene: newScene, updatedAt: Date.now() }
+              sessions[sessionId] = updatedSession
+              lsSet(LS_SESSIONS, sessions)
+              saveSessionToServer(updatedSession)
+              get().loadSessions()
+            }
+          }
+        } else if (data.type === 'error') {
+          throw new Error(data.error as string)
+        }
+      }
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        sseBuffer += decoder.decode(value, { stream: true })
+        const parts = sseBuffer.split('\n\n')
+        sseBuffer = parts.pop() ?? ''
+        for (const part of parts) {
+          for (const line of part.split('\n')) {
+            if (line.startsWith('data: ')) {
+              try { processEvent(JSON.parse(line.slice(6))) } catch { /* skip malformed */ }
+            }
+          }
         }
       }
     } catch (err: unknown) {
-      set({ error: `행동 처리 실패: ${extractMessage(err)}`, isProcessing: false })
+      set({ error: `행동 처리 실패: ${extractMessage(err)}`, isProcessing: false, streamingContent: '' })
     }
   },
 

@@ -177,7 +177,7 @@ function StatsBar() {
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-xs"
-      style={{ background: 'rgba(5,5,10,0.95)', borderBottom: '1px solid #1a1020' }}>
+      style={{ background: 'rgba(5,5,10,0.95)' }}>
 
       {/* Row 1: Name + HP + Gold (always together) */}
       <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -218,19 +218,30 @@ function StatsBar() {
 
 // ── Main GameScreen ───────────────────────────────────
 export default function GameScreen() {
-  const { messages, npcs, currentScene, sendAction, isProcessing, error, resetGame } = useGameStore()
+  const { messages, npcs, sendAction, isProcessing, streamingContent, error, resetGame } = useGameStore()
   const [input, setInput] = useState('')
   const [showMenu, setShowMenu] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const latestMsg = messages[messages.length - 1]
   const currentNpc = latestMsg?.npcId ? npcs.find(n => n.id === latestMsg.npcId) : null
 
-  // Auto-scroll
+  // Auto-scroll when new content arrives
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, streamingContent])
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showMenu])
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
@@ -252,8 +263,47 @@ export default function GameScreen() {
   return (
     <div className="flex flex-col h-screen" style={{ background: '#05050a' }}>
 
-      {/* Stats bar */}
-      <StatsBar />
+      {/* Top bar: Stats + Menu */}
+      <div className="flex items-stretch" style={{ background: 'rgba(5,5,10,0.95)', borderBottom: '1px solid #1a1020' }}>
+        <div className="flex-1 min-w-0">
+          <StatsBar />
+        </div>
+
+        {/* Hamburger menu — top right */}
+        <div className="relative flex-shrink-0 flex items-center px-2" ref={menuRef}>
+          <button
+            className="px-2 py-1 rounded-sm transition-colors"
+            style={{ color: 'rgba(160,144,112,0.6)', fontSize: '18px', lineHeight: 1 }}
+            onClick={() => setShowMenu(v => !v)}
+            aria-label="메뉴">
+            ≡
+          </button>
+
+          {showMenu && (
+            <div className="absolute top-full right-0 mt-1 w-36 fantasy-panel rounded-sm overflow-hidden"
+              style={{ zIndex: 50 }}>
+              <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-white/5"
+                style={{ color: 'rgba(232,213,176,0.8)', borderBottom: '1px solid #1a1020' }}
+                onClick={() => setShowMenu(false)}>
+                📜 대화 기록
+              </button>
+              <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-white/5"
+                style={{ color: 'rgba(232,213,176,0.8)', borderBottom: '1px solid #1a1020' }}
+                onClick={() => setShowMenu(false)}>
+                👑 NPC 목록
+              </button>
+              <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-red-900/20"
+                style={{ color: '#e74c3c' }}
+                onClick={() => {
+                  setShowMenu(false)
+                  if (confirm('게임을 초기화하시겠습니까? 모든 진행 상황이 사라집니다.')) resetGame()
+                }}>
+                🔄 처음부터
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">
@@ -261,13 +311,29 @@ export default function GameScreen() {
         {/* Messages column */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
 
-          {/* Messages */}
           {messages.map(msg => (
             <MessageBlock key={msg.id} msg={msg} npcs={npcs} />
           ))}
 
-          {/* Processing indicator */}
-          {isProcessing && (
+          {/* Streaming block — shows narration as it arrives */}
+          {isProcessing && streamingContent && (
+            <div className="animate-fade-in">
+              <div className="fantasy-panel rounded-sm p-5">
+                <p className="text-xs mb-3 font-cinzel tracking-widest"
+                  style={{ color: 'rgba(160,144,112,0.4)' }}>◆ 나레이터</p>
+                <div className="narrative-text text-sm" style={{ color: 'rgba(232,213,176,0.85)' }}>
+                  {streamingContent.split('\n\n').filter(Boolean).map((para, i) => (
+                    <p key={i} className="mb-4 last:mb-0">{para}</p>
+                  ))}
+                  <span className="inline-block w-0.5 h-4 ml-0.5 align-middle animate-pulse"
+                    style={{ background: 'rgba(212,175,55,0.7)' }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Spinner — shows before first chunk arrives */}
+          {isProcessing && !streamingContent && (
             <div className="flex items-center gap-3 animate-fade-in">
               <div className="fantasy-panel rounded-sm px-5 py-3 flex items-center gap-3">
                 <div className="loading-rune w-5 h-5" />
@@ -351,42 +417,6 @@ export default function GameScreen() {
               <span className="font-cinzel text-xs">전송</span>
             )}
           </button>
-
-          {/* Menu */}
-          <div className="relative">
-            <button
-              className="btn-fantasy-secondary px-3 py-3 flex-shrink-0"
-              style={{ minHeight: '60px' }}
-              onClick={() => setShowMenu(!showMenu)}>
-              <span className="text-lg">≡</span>
-            </button>
-
-            {showMenu && (
-              <div className="absolute bottom-full right-0 mb-2 w-40 fantasy-panel rounded-sm overflow-hidden"
-                style={{ zIndex: 50 }}>
-                <button className="w-full text-left px-4 py-3 text-sm transition-colors hover:bg-white/5"
-                  style={{ color: 'rgba(232,213,176,0.8)', borderBottom: '1px solid #1a1020' }}
-                  onClick={() => { setShowMenu(false) }}>
-                  📜 대화 기록
-                </button>
-                <button className="w-full text-left px-4 py-3 text-sm transition-colors hover:bg-white/5"
-                  style={{ color: 'rgba(232,213,176,0.8)', borderBottom: '1px solid #1a1020' }}
-                  onClick={() => { setShowMenu(false) }}>
-                  👑 NPC 목록
-                </button>
-                <button className="w-full text-left px-4 py-3 text-sm transition-colors hover:bg-red-900/20"
-                  style={{ color: '#e74c3c' }}
-                  onClick={() => {
-                    setShowMenu(false)
-                    if (confirm('게임을 초기화하시겠습니까? 모든 진행 상황이 사라집니다.')) {
-                      resetGame()
-                    }
-                  }}>
-                  🔄 처음부터
-                </button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

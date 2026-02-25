@@ -349,14 +349,7 @@ ${narrative.slice(0, 500)}...
 
 현재 위치: ${currentLocation}`
 
-  const msg = await getClient().messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 4000,
-    system: systemPrompt,
-    messages: [
-      {
-        role: 'user',
-        content: `## 최근 대화 기록
+  const userMessage = `## 최근 대화 기록
 ${historyText}
 
 ## 플레이어 행동
@@ -400,14 +393,148 @@ ${playerInput}
     {"emotion": "angry", "description": "fierce look"},
     {"emotion": "serious", "description": "focused gaze"}
   ]
-}`,
-      },
-    ],
+}`
+
+  const msg = await getClient().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8000,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMessage }],
   })
 
   const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
   return parseJson<ClaudeGameResponse>(textContent.text.trim(), /\{[\s\S]*\}/, '게임 액션')
+}
+
+// ================================================================
+// 5b. GAME ACTION STREAMING
+// ================================================================
+type StreamEvent =
+  | { type: 'chunk'; content: string }
+  | { type: 'done'; response: ClaudeGameResponse }
+
+export async function* processGameActionStream(
+  world: WorldData,
+  npcs: NPC[],
+  narrative: string,
+  character: PlayerCharacter,
+  history: GameMessage[],
+  playerInput: string,
+  currentLocation: string
+): AsyncGenerator<StreamEvent> {
+  const npcSummary = npcs.map(n =>
+    `- ID: ${n.id} | ${n.title} ${n.name} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment}`
+  ).join('\n')
+
+  const historyText = history.slice(-10).map(m => {
+    if (m.role === 'player') return `[플레이어] ${m.content}`
+    if (m.role === 'npc') return `[${m.npcName || 'NPC'}] ${m.content}`
+    return `[나레이터] ${m.content}`
+  }).join('\n\n')
+
+  const systemPrompt = `당신은 판타지 TRPG 게임의 게임 마스터입니다.
+세계: ${world.name}
+세계 배경: ${world.lore}
+
+## 주요 NPC 목록
+${npcSummary}
+
+## 메인 서사
+${narrative.slice(0, 500)}...
+
+## 게임 규칙
+- 웹소설/라이트노벨 스타일로 4-6문단의 몰입감 있는 서술을 작성하세요
+- 대사는 큰따옴표 "로 표시하세요
+- 플레이어 행동에 논리적으로 반응하세요
+- NPC의 성격과 성향에 맞게 행동시키세요
+- 세계관의 일관성을 유지하세요
+- scene_description은 영어로 작성하세요 (이미지 생성용)
+- 반드시 유효한 JSON만 반환하세요
+
+## 이미지 재사용 규칙 (비용 절감)
+- scene_tag: 장소+시간대를 나타내는 짧은 영어 슬러그 (예: "tavern_night", "forest_day", "dungeon_corridor", "city_market_day", "castle_interior", "cave_entrance"). 2-3 단어, 소문자, 언더스코어 구분.
+- reuse_scene_image: 아래 조건이 모두 해당하면 true, 하나라도 아니면 false
+  * 이전 턴과 current_location이 동일
+  * 시간대/날씨/조명이 크게 변하지 않음
+  * 장면의 전반적 분위기가 유사 (전투 시작/종료 등 극적 변화 없음)
+
+## 주인공 정보
+이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${character.stats.level}
+배경: ${character.backstory.slice(0, 100)}
+
+현재 위치: ${currentLocation}`
+
+  const userMessage = `## 최근 대화 기록
+${historyText}
+
+## 플레이어 행동
+${playerInput}
+
+다음 JSON 형식으로 응답하세요:
+{
+  "narration": "웹소설 스타일의 서술 (4-6문단, 대사 포함, 한국어, 최소 400자)",
+  "scene_description": "English description for image generation: location, atmosphere, characters present, time of day, weather, mood (max 60 words)",
+  "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
+  "reuse_scene_image": false,
+  "current_location": "현재 위치명",
+  "npc_speaking": "현재 대화 중인 NPC의 id (없으면 null)",
+  "npc_emotion": "NPC 감정 상태 neutral/happy/angry/sad/surprised/serious/smug 중 하나 (없으면 null)",
+  "available_npcs": ["현재 장면에 있는 NPC id 배열"],
+  "game_over": false,
+  "new_npc": null
+}`
+
+  const stream = getClient().messages.stream({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8000,
+    system: systemPrompt,
+    messages: [{ role: 'user', content: userMessage }],
+  })
+
+  let fullText = ''
+  let narrationOffset = -1
+  let narrationSent = 0
+
+  for await (const event of stream) {
+    if (event.type !== 'content_block_delta') continue
+    const delta = event.delta as { type: string; text?: string }
+    if (delta.type !== 'text_delta' || !delta.text) continue
+
+    fullText += delta.text
+
+    // Detect start of narration string value
+    if (narrationOffset === -1) {
+      const prefix = '"narration": "'
+      const idx = fullText.indexOf(prefix)
+      if (idx !== -1) narrationOffset = idx + prefix.length
+    }
+
+    if (narrationOffset === -1) continue
+
+    // Extract newly streamed narration characters
+    const available = fullText.slice(narrationOffset)
+    let endIdx = -1
+    let escaped = false
+    for (let i = narrationSent; i < available.length; i++) {
+      if (escaped) { escaped = false; continue }
+      if (available[i] === '\\') { escaped = true; continue }
+      if (available[i] === '"') { endIdx = i; break }
+    }
+
+    const raw = endIdx !== -1
+      ? available.slice(narrationSent, endIdx)
+      : available.slice(narrationSent)
+
+    if (raw) {
+      const decoded = raw.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+      yield { type: 'chunk', content: decoded }
+      narrationSent = endIdx !== -1 ? endIdx : available.length
+    }
+  }
+
+  const response = parseJson<ClaudeGameResponse>(fullText.trim(), /\{[\s\S]*\}/, '게임 액션')
+  yield { type: 'done', response }
 }
 
 // ================================================================

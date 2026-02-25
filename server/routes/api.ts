@@ -237,6 +237,113 @@ router.post('/session/create', async (req: Request, res: Response) => {
 // ================================================================
 // POST /api/game/action — Process player action (stateless)
 // ================================================================
+// ================================================================
+// POST /game/action/stream  — streaming SSE version
+// ================================================================
+router.post('/game/action/stream', async (req: Request, res: Response) => {
+  const {
+    worldData, npcs, narrative, character, history, input, currentLocation,
+    sceneTagCache, npcPortraitCache,
+  } = req.body as {
+    worldData: WorldData
+    npcs: NPC[]
+    narrative: string
+    character: PlayerCharacter
+    history: GameMessage[]
+    input: string
+    currentLocation: string
+    sceneTagCache?: Record<string, string>
+    npcPortraitCache?: Record<string, string>
+  }
+
+  if (!worldData || !input?.trim()) {
+    res.status(400).json({ error: 'worldData and input are required' })
+    return
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('X-Accel-Buffering', 'no')
+  res.flushHeaders()
+
+  const sendEvent = (data: object) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`)
+  }
+
+  try {
+    const gen = claude.processGameActionStream(
+      worldData, npcs ?? [], narrative ?? '',
+      character, history ?? [], input, currentLocation ?? ''
+    )
+
+    let response = null
+    for await (const event of gen) {
+      if (event.type === 'chunk') {
+        sendEvent({ type: 'chunk', content: event.content })
+      } else {
+        response = event.response
+      }
+    }
+
+    if (!response) throw new Error('No response from Claude')
+
+    // ── Scene image ────────────────────────────────────────────
+    const sceneTag = response.scene_tag ?? ''
+    let sceneImageUrl: string | null = null
+
+    if (response.reuse_scene_image) {
+      sceneImageUrl = null
+    } else if (sceneTag && sceneTagCache?.[sceneTag]) {
+      sceneImageUrl = sceneTagCache[sceneTag]
+    } else {
+      sceneImageUrl = await imageService.generateSceneImage(response.scene_description)
+    }
+
+    // ── NPC portrait ───────────────────────────────────────────
+    const allNpcs = [...(npcs ?? [])]
+    if (response.new_npc) allNpcs.push(response.new_npc)
+
+    let npcData = undefined
+    if (response.npc_speaking) {
+      const npc = allNpcs.find(n => n.id === response.npc_speaking)
+      if (npc) {
+        const emotion = response.npc_emotion ?? 'neutral'
+        const cacheKey = `${npc.id}_${emotion}`
+        let portraitUrl: string
+        if (npcPortraitCache?.[cacheKey]) {
+          portraitUrl = npcPortraitCache[cacheKey]
+        } else {
+          const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
+            ?? npc.emotions[0]?.description ?? 'neutral expression'
+          portraitUrl = await imageService.generateNpcEmotion(npc, emotion, emotionDesc)
+        }
+        npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl }
+      }
+    }
+
+    sendEvent({
+      type: 'done',
+      narration: response.narration,
+      sceneImageUrl,
+      sceneTag,
+      currentLocation: response.current_location,
+      npcSpeaking: npcData ?? null,
+      availableNpcs: response.available_npcs,
+      gameOver: response.game_over,
+      newNpc: response.new_npc ?? null,
+    })
+    res.end()
+  } catch (err) {
+    console.error('[API] Game action stream error:', err)
+    sendEvent({ type: 'error', error: apiError(err) })
+    res.end()
+  }
+})
+
+// ================================================================
+// POST /game/action  — non-streaming fallback
+// ================================================================
 router.post('/game/action', async (req: Request, res: Response) => {
   const {
     worldData, npcs, narrative, character, history, input, currentLocation,
