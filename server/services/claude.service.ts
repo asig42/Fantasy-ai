@@ -430,7 +430,7 @@ ${NEW_NPC_RULES}`
   const msg = await getClient().messages.create({
     model: selectModel(playerInput, history),
     max_tokens: 6000,
-    system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as Parameters<typeof getClient().messages.create>[0]['system'],
+    system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
     messages: [{ role: 'user', content: userMessage }],
   })
 
@@ -471,7 +471,7 @@ ${NEW_NPC_RULES}`
   const stream = getClient().messages.stream({
     model: selectModel(playerInput, history),
     max_tokens: 6000,
-    system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as Parameters<typeof getClient().messages.create>[0]['system'],
+    system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
     messages: [{ role: 'user', content: userMessage }],
   })
 
