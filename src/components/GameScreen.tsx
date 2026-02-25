@@ -136,12 +136,12 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
   }
 
   return (
-    <div className="animate-fade-in fantasy-panel rounded-sm overflow-hidden">
+    <div className="animate-fade-in fantasy-panel rounded-sm">
 
-      {/* ── Desktop (sm+): portrait column on left + text ── */}
+      {/* ── Desktop (sm+): portrait sticky on left + text ── */}
       <div className={`hidden sm:flex gap-4 p-5 ${npc ? 'items-start' : ''}`}>
         {npc && (
-          <div className="flex-shrink-0" style={{ width: '120px' }}>
+          <div className="flex-shrink-0 self-start" style={{ width: '120px', position: 'sticky', top: '16px' }}>
             <NpcPortrait npc={npc} emotion={msg.npcEmotion} />
           </div>
         )}
@@ -175,9 +175,9 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
         <div className="narrative-text text-sm">{formattedContent}</div>
       </div>
 
-      {/* ── 씬 이미지: 카드 하단에 배치 (텍스트 읽고 나서 로딩) ── */}
+      {/* ── 씬 이미지: 카드 하단에 배치 ── */}
       {msg.sceneImageUrl && (
-        <div style={{ borderTop: '1px solid rgba(31,22,44,0.6)' }}>
+        <div style={{ borderTop: '1px solid rgba(31,22,44,0.6)', overflow: 'hidden' }}>
           <SceneImage url={msg.sceneImageUrl} alt="Scene" />
         </div>
       )}
