@@ -40,7 +40,7 @@ export async function testApiKey(key: string): Promise<boolean> {
   }
 }
 
-// JSON 파싱 헬퍼 - 잘린 응답 감지
+// JSON 파싱 헬퍼 - 잘린 응답 감지 및 배열 부분 복구
 function parseJson<T>(text: string, pattern: RegExp, context: string): T {
   const match = text.match(pattern)
   if (!match) throw new Error(`${context}: JSON을 찾을 수 없습니다`)
@@ -48,8 +48,33 @@ function parseJson<T>(text: string, pattern: RegExp, context: string): T {
     return JSON.parse(match[0]) as T
   } catch (e) {
     const msg = String(e)
-    if (msg.includes('Unterminated') || msg.includes('Unexpected end')) {
-      throw new Error(`${context}: 응답이 너무 길어 잘렸습니다. 잠시 후 다시 시도해주세요.`)
+    const isTruncated =
+      msg.includes('Unterminated') ||
+      msg.includes('Unexpected end') ||
+      msg.includes("Expected ','") ||
+      msg.includes("Expected '}'") ||
+      msg.includes("Expected ']'")
+
+    // 배열인 경우 완전한 항목만 복구 시도
+    if (isTruncated && pattern.source.startsWith('\\[')) {
+      try {
+        const partial = match[0]
+        const items: unknown[] = []
+        // 완성된 객체만 추출 (마지막 불완전한 항목 제외)
+        const objPattern = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
+        let m: RegExpExecArray | null
+        while ((m = objPattern.exec(partial)) !== null) {
+          try { items.push(JSON.parse(m[0])) } catch { /* skip malformed */ }
+        }
+        if (items.length >= 5) {
+          console.warn(`[Claude] ${context}: 응답 잘림 - ${items.length}개 항목 복구됨`)
+          return items as T
+        }
+      } catch { /* 복구 실패시 아래 에러로 */ }
+    }
+
+    if (isTruncated) {
+      throw new Error(`${context}: 응답이 잘렸습니다 (max_tokens 초과). 잠시 후 다시 시도해주세요.`)
     }
     throw new Error(`${context}: JSON 파싱 실패 - ${msg}`)
   }
@@ -127,41 +152,41 @@ export async function generateNPCs(world: WorldData): Promise<NPC[]> {
 
   const msg = await getClient().messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 5000,
+    max_tokens: 8000,
     system: `당신은 판타지 캐릭터를 설계하는 전문 작가입니다.
-반드시 유효한 JSON 배열만 반환하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.`,
+반드시 유효한 JSON 배열만 반환하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.
+모든 문자열 값은 간결하게 작성하세요.`,
     messages: [
       {
         role: 'user',
-        content: `세계 '${world.name}'의 핵심 NPC 10명을 만들어주세요. 이들은 메인 스토리에 직접 관여하는 중요 인물들입니다.
+        content: `세계 '${world.name}'의 핵심 NPC 10명을 만들어주세요.
 국가들: ${kingdomsList}
 
-다음 규칙을 따라주세요:
-- 황제/왕, 여왕/대공비, 마법사, 기사단장, 고위 성직자, 상인 길드장, 암살자 길드마스터, 용병대장, 현자, 마녀/대마법사 등 핵심 역할 포함
+규칙:
+- 황제/왕, 여왕/대공비, 마법사, 기사단장, 고위 성직자, 상인 길드장, 암살자 길드마스터, 용병대장, 현자, 마녀 등 핵심 역할
 - 성별: 남성과 여성 혼합 (최소 4명 여성)
-- 각 캐릭터는 독특한 외모와 성격을 가져야 함
-- appearance 필드는 영어로 작성 (이미지 생성용)
+- appearance 필드는 영어로 작성 (이미지 생성용, 60자 이내)
 
 JSON 배열 형식 (정확히 10명):
 [
   {
     "id": "npc_01",
     "name": "이름",
-    "title": "직함/칭호",
+    "title": "직함",
     "age": 숫자,
     "gender": "남성 또는 여성",
     "nationality": "출신 국가",
-    "appearance": "English description: hair color, eye color, build, distinctive features, clothing style for portrait generation",
+    "appearance": "hair, eyes, build, clothing (English, max 60 chars)",
     "personality": ["성격1", "성격2", "성격3"],
-    "background": "배경 이야기 (80자)",
-    "alignment": "선(善) 또는 중립(中立) 또는 악(惡)",
-    "skills": ["능력/기술1", "능력/기술2"],
-    "relationshipToPlayer": "주인공과의 잠재적 관계 (예: 의뢰인, 적, 조언자, 상인)",
+    "background": "배경 이야기 (50자 이내)",
+    "alignment": "선 또는 중립 또는 악",
+    "skills": ["능력1", "능력2"],
+    "relationshipToPlayer": "잠재적 관계",
     "emotions": [
-      {"emotion": "neutral", "description": "calm and composed"},
-      {"emotion": "happy", "description": "warm smile, relaxed"},
-      {"emotion": "angry", "description": "fierce eyes, tense jaw"},
-      {"emotion": "serious", "description": "furrowed brow, determined look"}
+      {"emotion": "neutral", "description": "calm expression"},
+      {"emotion": "happy", "description": "warm smile"},
+      {"emotion": "angry", "description": "fierce eyes"},
+      {"emotion": "serious", "description": "determined look"}
     ]
   }
 ]`,
