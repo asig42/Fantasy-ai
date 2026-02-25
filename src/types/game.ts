@@ -141,6 +141,7 @@ export interface GameMessage {
   npcEmotion?: string
   timestamp: number
   sceneImageUrl?: string
+  suggestedActions?: string[]  // AI-suggested player actions for this turn
 }
 
 export interface GameSession {
@@ -203,4 +204,5 @@ export interface ClaudeGameResponse {
   available_npcs: string[]
   game_over: boolean
   new_npc?: NPC  // Dynamically created NPC (when Claude introduces a new character)
+  suggested_actions: string[]  // 3 context-aware action suggestions for the player
 }

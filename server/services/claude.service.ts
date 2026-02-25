@@ -321,7 +321,8 @@ const GM_JSON_FORMAT = `{
   "npc_emotion": "NPC 감정 상태 neutral/happy/angry/sad/surprised/serious/smug 중 하나 (없으면 null)",
   "available_npcs": ["현재 장면에 있는 NPC id 배열"],
   "game_over": false,
-  "new_npc": null
+  "new_npc": null,
+  "suggested_actions": ["현재 상황에 맞는 행동 제안 1 (10자 이내)", "행동 제안 2 (10자 이내)", "행동 제안 3 (10자 이내)"]
 }`
 
 const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙

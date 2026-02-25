@@ -119,6 +119,7 @@ interface GameStore {
   isLoading: boolean
   isProcessing: boolean
   streamingContent: string
+  suggestedActions: string[]
   error: string | null
 
   hasApiKey: boolean
@@ -162,6 +163,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isLoading: false,
   isProcessing: false,
   streamingContent: '',
+  suggestedActions: [],
   error: null,
 
   hasApiKey: false,
@@ -483,7 +485,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         } else if (data.type === 'done') {
           const {
             narration, summary, sceneImageUrl, sceneTag,
-            currentLocation: newLoc, npcSpeaking, gameOver, newNpc,
+            currentLocation: newLoc, npcSpeaking, gameOver, newNpc, suggestedActions,
           } = data as {
             narration: string
             summary: string
@@ -493,6 +495,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             npcSpeaking: { id: string; name: string; title: string; emotion: string; portraitUrl: string } | null
             gameOver: boolean
             newNpc: NPC | null
+            suggestedActions: string[]
           }
 
           const resolvedSceneUrl: string | undefined =
@@ -516,6 +519,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             npcEmotion: npcSpeaking?.emotion,
             timestamp: Date.now(),
             sceneImageUrl: resolvedSceneUrl,
+            suggestedActions: suggestedActions?.length ? suggestedActions : undefined,
           }
 
           const newMessages = [...get().messages, responseMsg]
@@ -533,6 +537,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             currentScene: newScene,
             sceneImageCache: updatedSceneCache,
             npcPortraitCache: updatedNpcCache,
+            suggestedActions: suggestedActions ?? [],
             isProcessing: false,
             streamingContent: '',
             ...(gameOver ? { phase: 'start' } : {}),

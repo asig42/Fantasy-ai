@@ -235,7 +235,7 @@ function StatsBar() {
 
 // ── Main GameScreen ───────────────────────────────────
 export default function GameScreen() {
-  const { messages, npcs, sendAction, isProcessing, streamingContent, error, resetGame } = useGameStore()
+  const { messages, npcs, sendAction, isProcessing, streamingContent, suggestedActions, error, resetGame } = useGameStore()
   const [input, setInput] = useState('')
   const [showMenu, setShowMenu] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -272,7 +272,8 @@ export default function GameScreen() {
     }
   }
 
-  const QUICK_ACTIONS = ['주변을 살펴본다', '앞으로 나아간다', '누군가에게 말을 건다', '현재 상황을 파악한다']
+  const DEFAULT_ACTIONS = ['주변을 살펴본다', '앞으로 나아간다', '누군가에게 말을 건다', '현재 상황을 파악한다']
+  const quickActions = suggestedActions.length > 0 ? suggestedActions : DEFAULT_ACTIONS
 
   return (
     <div className="flex flex-col h-screen" style={{ background: '#05050a' }}>
@@ -374,7 +375,7 @@ export default function GameScreen() {
 
         {/* Quick actions */}
         <div className="px-3 pt-2 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
-          {QUICK_ACTIONS.map(action => (
+          {quickActions.map(action => (
             <button key={action}
               className="flex-shrink-0 text-xs px-3 py-1.5 rounded-sm whitespace-nowrap transition-all duration-200"
               style={{

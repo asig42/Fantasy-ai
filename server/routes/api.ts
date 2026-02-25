@@ -333,6 +333,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
       availableNpcs: response.available_npcs,
       gameOver: response.game_over,
       newNpc: response.new_npc ?? null,
+      suggestedActions: response.suggested_actions ?? [],
     })
     res.end()
   } catch (err) {
