@@ -325,6 +325,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     sendEvent({
       type: 'done',
       narration: response.narration,
+      summary: response.summary ?? '',
       sceneImageUrl,
       sceneTag,
       currentLocation: response.current_location,

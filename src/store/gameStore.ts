@@ -482,10 +482,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           set(state => ({ streamingContent: state.streamingContent + (data.content as string) }))
         } else if (data.type === 'done') {
           const {
-            narration, sceneImageUrl, sceneTag,
+            narration, summary, sceneImageUrl, sceneTag,
             currentLocation: newLoc, npcSpeaking, gameOver, newNpc,
           } = data as {
             narration: string
+            summary: string
             sceneImageUrl: string | null
             sceneTag: string
             currentLocation: string
@@ -509,6 +510,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             id: `msg_${Date.now()}_response`,
             role: npcSpeaking ? 'npc' : 'narrator',
             content: narration,
+            summary: summary || undefined,
             npcId: npcSpeaking?.id,
             npcName: npcSpeaking?.name,
             npcEmotion: npcSpeaking?.emotion,

@@ -294,70 +294,25 @@ JSON 배열:
 }
 
 // ================================================================
-// 5. GAME ACTION PROCESSING (Main GM Function)
+// SHARED HELPERS
 // ================================================================
-export async function processGameAction(
-  world: WorldData,
-  npcs: NPC[],
-  narrative: string,
-  character: PlayerCharacter,
-  history: GameMessage[],
-  playerInput: string,
-  currentLocation: string
-): Promise<ClaudeGameResponse> {
-  console.log('[Claude] Processing game action...')
 
-  const npcSummary = npcs.map(n =>
-    `- ID: ${n.id} | ${n.title} ${n.name} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment}`
-  ).join('\n')
-
-  const historyText = history.slice(-10).map(m => {
+// Build compact history text: use pre-computed summaries when available,
+// falling back to truncated content. Allows sending many more turns
+// without blowing up the token budget.
+function buildHistoryText(history: GameMessage[]): string {
+  return history.slice(-20).map(m => {
     if (m.role === 'player') return `[플레이어] ${m.content}`
-    if (m.role === 'npc') return `[${m.npcName || 'NPC'}] ${m.content}`
-    return `[나레이터] ${m.content}`
+    const prefix = m.role === 'npc' ? `[${m.npcName || 'NPC'}]` : '[나레이터]'
+    const text = m.summary ?? m.content.slice(0, 120)
+    return `${prefix} ${text}`
   }).join('\n\n')
+}
 
-  const systemPrompt = `당신은 판타지 TRPG 게임의 게임 마스터입니다.
-세계: ${world.name}
-세계 배경: ${world.lore}
-
-## 주요 NPC 목록
-${npcSummary}
-
-## 메인 서사
-${narrative.slice(0, 500)}...
-
-## 게임 규칙
-- 웹소설/라이트노벨 스타일로 4-6문단의 몰입감 있는 서술을 작성하세요
-- 대사는 큰따옴표 "로 표시하세요
-- 플레이어 행동에 논리적으로 반응하세요
-- NPC의 성격과 성향에 맞게 행동시키세요
-- 세계관의 일관성을 유지하세요
-- scene_description은 영어로 작성하세요 (이미지 생성용)
-- 반드시 유효한 JSON만 반환하세요
-
-## 이미지 재사용 규칙 (비용 절감)
-- scene_tag: 장소+시간대를 나타내는 짧은 영어 슬러그 (예: "tavern_night", "forest_day", "dungeon_corridor", "city_market_day", "castle_interior", "cave_entrance"). 2-3 단어, 소문자, 언더스코어 구분.
-- reuse_scene_image: 아래 조건이 모두 해당하면 true, 하나라도 아니면 false
-  * 이전 턴과 current_location이 동일
-  * 시간대/날씨/조명이 크게 변하지 않음
-  * 장면의 전반적 분위기가 유사 (전투 시작/종료 등 극적 변화 없음)
-
-## 주인공 정보
-이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${character.stats.level}
-배경: ${character.backstory.slice(0, 100)}
-
-현재 위치: ${currentLocation}`
-
-  const userMessage = `## 최근 대화 기록
-${historyText}
-
-## 플레이어 행동
-${playerInput}
-
-다음 JSON 형식으로 응답하세요:
-{
+// The extra JSON fields we ask Claude to return alongside narration
+const GM_JSON_FORMAT = `{
   "narration": "웹소설 스타일의 서술 (4-6문단, 대사 포함, 한국어, 최소 400자)",
+  "summary": "이번 턴 핵심 요약 (한국어 1-2문장, 50자 이내): 플레이어 행동 결과와 중요 정보만",
   "scene_description": "English description for image generation: location, atmosphere, characters present, time of day, weather, mood (max 60 words)",
   "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
   "reuse_scene_image": false,
@@ -367,9 +322,9 @@ ${playerInput}
   "available_npcs": ["현재 장면에 있는 NPC id 배열"],
   "game_over": false,
   "new_npc": null
-}
+}`
 
-## 새 NPC 즉석 생성 규칙
+const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
 - 위 NPC 목록에 없는 새 인물이 이야기에 등장해야 할 때만 new_npc 필드를 채우세요
 - 기존 NPC와 상호작용할 때는 new_npc를 null로 두세요
 - new_npc를 생성할 경우 npc_speaking에 그 id를 사용하세요
@@ -395,45 +350,15 @@ ${playerInput}
   ]
 }`
 
-  const msg = await getClient().messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userMessage }],
-  })
-
-  const textContent = msg.content.find(b => b.type === 'text')
-  if (!textContent || textContent.type !== 'text') throw new Error('No text response')
-  return parseJson<ClaudeGameResponse>(textContent.text.trim(), /\{[\s\S]*\}/, '게임 액션')
-}
-
-// ================================================================
-// 5b. GAME ACTION STREAMING
-// ================================================================
-type StreamEvent =
-  | { type: 'chunk'; content: string }
-  | { type: 'done'; response: ClaudeGameResponse }
-
-export async function* processGameActionStream(
-  world: WorldData,
-  npcs: NPC[],
-  narrative: string,
-  character: PlayerCharacter,
-  history: GameMessage[],
-  playerInput: string,
-  currentLocation: string
-): AsyncGenerator<StreamEvent> {
+function buildSystemPrompt(
+  world: WorldData, npcs: NPC[], narrative: string,
+  character: PlayerCharacter, currentLocation: string
+): string {
   const npcSummary = npcs.map(n =>
     `- ID: ${n.id} | ${n.title} ${n.name} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment}`
   ).join('\n')
 
-  const historyText = history.slice(-10).map(m => {
-    if (m.role === 'player') return `[플레이어] ${m.content}`
-    if (m.role === 'npc') return `[${m.npcName || 'NPC'}] ${m.content}`
-    return `[나레이터] ${m.content}`
-  }).join('\n\n')
-
-  const systemPrompt = `당신은 판타지 TRPG 게임의 게임 마스터입니다.
+  return `당신은 판타지 TRPG 게임의 게임 마스터입니다.
 세계: ${world.name}
 세계 배경: ${world.lore}
 
@@ -464,31 +389,80 @@ ${narrative.slice(0, 500)}...
 배경: ${character.backstory.slice(0, 100)}
 
 현재 위치: ${currentLocation}`
+}
 
-  const userMessage = `## 최근 대화 기록
+// ================================================================
+// 5. GAME ACTION PROCESSING (Main GM Function)
+// ================================================================
+export async function processGameAction(
+  world: WorldData,
+  npcs: NPC[],
+  narrative: string,
+  character: PlayerCharacter,
+  history: GameMessage[],
+  playerInput: string,
+  currentLocation: string
+): Promise<ClaudeGameResponse> {
+  console.log('[Claude] Processing game action...')
+
+  const historyText = buildHistoryText(history)
+
+  const userMessage = `## 최근 대화 기록 (요약 포함)
 ${historyText}
 
 ## 플레이어 행동
 ${playerInput}
 
 다음 JSON 형식으로 응답하세요:
-{
-  "narration": "웹소설 스타일의 서술 (4-6문단, 대사 포함, 한국어, 최소 400자)",
-  "scene_description": "English description for image generation: location, atmosphere, characters present, time of day, weather, mood (max 60 words)",
-  "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
-  "reuse_scene_image": false,
-  "current_location": "현재 위치명",
-  "npc_speaking": "현재 대화 중인 NPC의 id (없으면 null)",
-  "npc_emotion": "NPC 감정 상태 neutral/happy/angry/sad/surprised/serious/smug 중 하나 (없으면 null)",
-  "available_npcs": ["현재 장면에 있는 NPC id 배열"],
-  "game_over": false,
-  "new_npc": null
-}`
+${GM_JSON_FORMAT}
+
+${NEW_NPC_RULES}`
+
+  const msg = await getClient().messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 8000,
+    system: buildSystemPrompt(world, npcs, narrative, character, currentLocation),
+    messages: [{ role: 'user', content: userMessage }],
+  })
+
+  const textContent = msg.content.find(b => b.type === 'text')
+  if (!textContent || textContent.type !== 'text') throw new Error('No text response')
+  return parseJson<ClaudeGameResponse>(textContent.text.trim(), /\{[\s\S]*\}/, '게임 액션')
+}
+
+// ================================================================
+// 5b. GAME ACTION STREAMING
+// ================================================================
+type StreamEvent =
+  | { type: 'chunk'; content: string }
+  | { type: 'done'; response: ClaudeGameResponse }
+
+export async function* processGameActionStream(
+  world: WorldData,
+  npcs: NPC[],
+  narrative: string,
+  character: PlayerCharacter,
+  history: GameMessage[],
+  playerInput: string,
+  currentLocation: string
+): AsyncGenerator<StreamEvent> {
+  const historyText = buildHistoryText(history)
+
+  const userMessage = `## 최근 대화 기록 (요약 포함)
+${historyText}
+
+## 플레이어 행동
+${playerInput}
+
+다음 JSON 형식으로 응답하세요:
+${GM_JSON_FORMAT}
+
+${NEW_NPC_RULES}`
 
   const stream = getClient().messages.stream({
     model: 'claude-sonnet-4-6',
     max_tokens: 8000,
-    system: systemPrompt,
+    system: buildSystemPrompt(world, npcs, narrative, character, currentLocation),
     messages: [{ role: 'user', content: userMessage }],
   })
 
