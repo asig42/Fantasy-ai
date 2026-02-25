@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useGameStore } from './store/gameStore'
 import StartScreen from './components/StartScreen'
 import LoadingScreen from './components/LoadingScreen'
@@ -7,7 +8,15 @@ import CharacterCreation from './components/CharacterCreation'
 import GameScreen from './components/GameScreen'
 
 function App() {
-  const { phase } = useGameStore()
+  const { phase, resumeSessionFromServer } = useGameStore()
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const sessionId = params.get('session')
+    if (sessionId) {
+      resumeSessionFromServer(sessionId)
+    }
+  }, [])
 
   return (
     <div className="min-h-screen" style={{ background: '#05050a' }}>

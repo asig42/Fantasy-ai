@@ -1,7 +1,13 @@
 import { Router, Request, Response } from 'express'
 import * as claude from '../services/claude.service'
 import * as imageService from '../services/image.service'
-import { saveConfig } from '../services/storage.service'
+import {
+  saveConfig,
+  saveWorld, loadWorld,
+  saveNPCs, loadNPCs,
+  saveNarrative, loadNarrative,
+  saveSession, loadSession,
+} from '../services/storage.service'
 import type {
   WorldData,
   NPC,
@@ -86,6 +92,7 @@ router.post('/world/generate', async (_req: Request, res: Response) => {
   try {
     const world = await claude.generateWorld()
     console.log(`[API] World created: ${world.name}`)
+    saveWorld(world).catch(() => {})
     res.json({ world })
   } catch (err) {
     console.error('[API] World generation error:', err)
@@ -102,6 +109,7 @@ router.post('/npcs/generate', async (req: Request, res: Response) => {
   try {
     const npcs = await claude.generateNPCs(world)
     console.log(`[API] NPCs created: ${npcs.length}`)
+    saveNPCs(npcs).catch(() => {})
     res.json({ npcs })
   } catch (err) {
     console.error('[API] NPC generation error:', err)
@@ -118,6 +126,7 @@ router.post('/narrative/generate', async (req: Request, res: Response) => {
   try {
     const narrative = await claude.generateNarrative(world)
     console.log('[API] Narrative created')
+    saveNarrative(narrative).catch(() => {})
     res.json({ narrative })
   } catch (err) {
     console.error('[API] Narrative generation error:', err)
@@ -323,6 +332,70 @@ router.post('/game/action', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('[API] Game action error:', err)
     res.status(500).json({ error: apiError(err) })
+  }
+})
+
+// ================================================================
+// GET /api/world — Load world from server disk
+// ================================================================
+router.get('/world', async (_req: Request, res: Response) => {
+  try {
+    const world = await loadWorld()
+    if (!world) return res.status(404).json({ error: 'No world data on server' })
+    res.json({ world })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// GET /api/npcs — Load NPCs from server disk
+// ================================================================
+router.get('/npcs', async (_req: Request, res: Response) => {
+  try {
+    const npcs = await loadNPCs()
+    res.json({ npcs })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// GET /api/narrative — Load narrative from server disk
+// ================================================================
+router.get('/narrative', async (_req: Request, res: Response) => {
+  try {
+    const narrative = await loadNarrative()
+    res.json({ narrative: narrative ?? '' })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// POST /api/session/save — Save session to server disk
+// ================================================================
+router.post('/session/save', async (req: Request, res: Response) => {
+  try {
+    const { session } = req.body as { session: Parameters<typeof saveSession>[0] }
+    if (!session?.id) return res.status(400).json({ error: 'session required' })
+    await saveSession(session)
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// GET /api/session/:id — Load session from server disk
+// ================================================================
+router.get('/session/:id', async (req: Request, res: Response) => {
+  try {
+    const session = await loadSession(req.params.id)
+    if (!session) return res.status(404).json({ error: 'Session not found' })
+    res.json({ session })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
   }
 })
 

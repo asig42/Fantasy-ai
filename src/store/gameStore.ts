@@ -13,6 +13,19 @@ import type {
   GameSession,
 } from '../types/game'
 
+// ─── Server session helpers ───────────────────────────────────
+async function saveSessionToServer(session: GameSession) {
+  try {
+    await axios.post('/api/session/save', { session }, { timeout: 10000 })
+  } catch { /* ignore - local save is primary */ }
+}
+
+function updateUrlWithSession(sessionId: string) {
+  const url = new URL(window.location.href)
+  url.searchParams.set('session', sessionId)
+  window.history.replaceState({}, '', url.toString())
+}
+
 // ─── localStorage helpers ─────────────────────────────────────
 const LS_WORLD = 'fantasy-ai-world'
 const LS_NPCS = 'fantasy-ai-npcs'
@@ -124,6 +137,7 @@ interface GameStore {
   saveApiKey: (anthropicKey: string, falKey?: string) => Promise<void>
   loadSessions: () => void
   resumeSession: (sessionId: string) => void
+  resumeSessionFromServer: (sessionId: string) => Promise<void>
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -195,6 +209,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const narrative = lsGet<string>(LS_NARRATIVE) ?? ''
 
     lsSet(LS_LAST_SESSION, sessionId)
+    updateUrlWithSession(sessionId)
 
     set({
       sessionId: session.id,
@@ -369,6 +384,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       sessions[sessionId] = session
       lsSet(LS_SESSIONS, sessions)
       lsSet(LS_LAST_SESSION, sessionId)
+      saveSessionToServer(session)
+      updateUrlWithSession(sessionId)
 
       set({
         sessionId,
@@ -493,19 +510,65 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
         const existing = sessions[sessionId]
         if (existing) {
-          sessions[sessionId] = {
+          const updatedSession = {
             ...existing,
             messages: newMessages,
             currentLocation: updatedLocation,
             currentScene: newScene,
             updatedAt: Date.now(),
           }
+          sessions[sessionId] = updatedSession
           lsSet(LS_SESSIONS, sessions)
+          saveSessionToServer(updatedSession)
           get().loadSessions()
         }
       }
     } catch (err: unknown) {
       set({ error: `행동 처리 실패: ${extractMessage(err)}`, isProcessing: false })
+    }
+  },
+
+  // ── Resume session from server (cross-device) ─────────────
+  resumeSessionFromServer: async (sessionId: string) => {
+    set({ isLoading: true, error: null })
+    try {
+      const [sessionRes, worldRes, npcsRes, narrativeRes] = await Promise.all([
+        axios.get(`/api/session/${sessionId}`, { timeout: 10000 }),
+        axios.get('/api/world', { timeout: 10000 }),
+        axios.get('/api/npcs', { timeout: 10000 }),
+        axios.get('/api/narrative', { timeout: 10000 }),
+      ])
+      const session: GameSession = sessionRes.data.session
+      const world: WorldData = worldRes.data.world
+      const npcs: NPC[] = npcsRes.data.npcs
+      const narrative: string = narrativeRes.data.narrative
+
+      // Cache in localStorage for this device
+      lsSet(LS_WORLD, world)
+      lsSet(LS_NPCS, npcs)
+      lsSet(LS_NARRATIVE, narrative)
+      const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
+      sessions[sessionId] = session
+      lsSet(LS_SESSIONS, sessions)
+      lsSet(LS_LAST_SESSION, sessionId)
+
+      set({
+        sessionId: session.id,
+        character: session.character,
+        messages: session.messages,
+        currentLocation: session.currentLocation,
+        currentScene: session.currentScene ?? null,
+        world,
+        npcs,
+        narrative,
+        mapImageUrl: world.mapImageUrl ?? null,
+        hasApiKey: true,
+        phase: 'game',
+        isLoading: false,
+        error: null,
+      })
+    } catch (err) {
+      set({ error: `세션 불러오기 실패: ${extractMessage(err)}`, isLoading: false })
     }
   },
 
