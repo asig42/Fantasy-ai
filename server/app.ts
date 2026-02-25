@@ -11,6 +11,8 @@ app.use(express.urlencoded({ extended: true }))
 
 app.use('/api', apiRouter)
 
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }))
+
 // Serve React build in production (non-Vercel self-hosted only)
 if (process.env.NODE_ENV === 'production' && !process.env.VERCEL) {
   const distPath = path.join(process.cwd(), 'dist')

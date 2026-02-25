@@ -5,17 +5,22 @@ services:
     build: .
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - PORT=3000
-      # API 키는 앱 UI에서 설정하거나 아래에 직접 입력
-      # - ANTHROPIC_API_KEY=sk-ant-your-key-here
-      # - FAL_KEY=your-fal-key-here
     volumes:
       # 게임 데이터와 이미지 영구 저장
       - fantasy_data:/app/data
       - fantasy_images:/app/public/images
-    restart: unless-stopped
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 volumes:
   fantasy_data:
