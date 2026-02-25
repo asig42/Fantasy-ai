@@ -99,6 +99,10 @@ interface GameStore {
   currentLocation: string
   currentScene: SceneData | null
 
+  // Image caches for cost reduction
+  sceneImageCache: Record<string, string>   // scene_tag → imageUrl
+  npcPortraitCache: Record<string, string>  // "{npcId}_{emotion}" → portraitUrl
+
   isLoading: boolean
   isProcessing: boolean
   error: string | null
@@ -138,6 +142,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   messages: [],
   currentLocation: '',
   currentScene: null,
+  sceneImageCache: {},
+  npcPortraitCache: {},
   isLoading: false,
   isProcessing: false,
   error: null,
@@ -382,7 +388,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // ── Send action ───────────────────────────────────────────
   sendAction: async (input: string) => {
-    const { sessionId, world, npcs, narrative, character, messages, currentLocation } = get()
+    const {
+      sessionId, world, npcs, narrative, character, messages, currentLocation,
+      sceneImageCache, npcPortraitCache,
+    } = get()
     if (!world || !character) return
 
     set({ isProcessing: true, error: null })
@@ -404,9 +413,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
         history: messages.slice(-15),
         input,
         currentLocation,
+        sceneTagCache: sceneImageCache,
+        npcPortraitCache,
       })
 
-      const { narration, sceneImageUrl, currentLocation: newLoc, npcSpeaking, gameOver, newNpc } = res.data
+      const {
+        narration, sceneImageUrl, sceneTag,
+        currentLocation: newLoc, npcSpeaking, gameOver, newNpc,
+      } = res.data
+
+      // Resolve final scene image URL: use new URL, or fall back to previous
+      const resolvedSceneUrl: string | undefined =
+        sceneImageUrl ?? get().currentScene?.imageUrl ?? undefined
+
+      // Update scene image cache if a new image was generated
+      const updatedSceneCache = { ...sceneImageCache }
+      if (sceneImageUrl && sceneTag) {
+        updatedSceneCache[sceneTag] = sceneImageUrl
+      }
+
+      // Update NPC portrait cache if a new portrait was generated
+      const updatedNpcCache = { ...npcPortraitCache }
+      if (npcSpeaking?.portraitUrl && npcSpeaking?.id && npcSpeaking?.emotion) {
+        const cacheKey = `${npcSpeaking.id}_${npcSpeaking.emotion}`
+        updatedNpcCache[cacheKey] = npcSpeaking.portraitUrl
+      }
 
       const responseMsg: GameMessage = {
         id: `msg_${Date.now()}_response`,
@@ -416,14 +447,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
         npcName: npcSpeaking?.name,
         npcEmotion: npcSpeaking?.emotion,
         timestamp: Date.now(),
-        sceneImageUrl: sceneImageUrl ?? undefined,
+        sceneImageUrl: resolvedSceneUrl,
       }
 
       const newMessages = [...get().messages, responseMsg]
       const updatedLocation = newLoc ?? currentLocation
       const newScene: SceneData = {
         description: '',
-        imageUrl: sceneImageUrl ?? get().currentScene?.imageUrl,
+        imageUrl: resolvedSceneUrl,
         currentLocation: updatedLocation,
         npcsPresent: [],
       }
@@ -432,6 +463,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         messages: newMessages,
         currentLocation: updatedLocation,
         currentScene: newScene,
+        sceneImageCache: updatedSceneCache,
+        npcPortraitCache: updatedNpcCache,
         isProcessing: false,
         ...(gameOver ? { phase: 'start' } : {}),
       })
@@ -484,7 +517,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       world: null, npcs: [], narrative: '', mapImageUrl: null,
       character: null, backgroundOptions: [],
       sessionId: null, messages: [], currentLocation: '',
-      currentScene: null, error: null,
+      currentScene: null, sceneImageCache: {}, npcPortraitCache: {}, error: null,
     })
   },
 }))

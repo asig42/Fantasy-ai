@@ -193,6 +193,8 @@ export interface GameActionResponse {
 export interface ClaudeGameResponse {
   narration: string
   scene_description: string  // English, for image generation
+  scene_tag: string          // Short normalized tag e.g. "tavern_night", "forest_day" for cache lookup
+  reuse_scene_image: boolean // true = scene unchanged, skip image generation
   current_location: string
   npc_speaking: string | null
   npc_emotion: string | null

@@ -229,7 +229,10 @@ router.post('/session/create', async (req: Request, res: Response) => {
 // POST /api/game/action — Process player action (stateless)
 // ================================================================
 router.post('/game/action', async (req: Request, res: Response) => {
-  const { worldData, npcs, narrative, character, history, input, currentLocation } = req.body as {
+  const {
+    worldData, npcs, narrative, character, history, input, currentLocation,
+    sceneTagCache, npcPortraitCache,
+  } = req.body as {
     worldData: WorldData
     npcs: NPC[]
     narrative: string
@@ -237,6 +240,8 @@ router.post('/game/action', async (req: Request, res: Response) => {
     history: GameMessage[]
     input: string
     currentLocation: string
+    sceneTagCache?: Record<string, string>   // scene_tag → imageUrl
+    npcPortraitCache?: Record<string, string> // "{npcId}_{emotion}" → portraitUrl
   }
 
   if (!worldData || !input?.trim()) {
@@ -254,7 +259,23 @@ router.post('/game/action', async (req: Request, res: Response) => {
       currentLocation ?? ''
     )
 
-    const sceneImageUrl = await imageService.generateSceneImage(response.scene_description)
+    // ── Scene image: 3-level reuse check ──────────────────────────
+    let sceneImageUrl: string | null = null
+    const sceneTag = response.scene_tag ?? ''
+
+    if (response.reuse_scene_image) {
+      // Level 1: Claude says scene unchanged → skip entirely (client keeps previous)
+      sceneImageUrl = null
+      console.log(`[Image] Reuse scene (unchanged): ${sceneTag}`)
+    } else if (sceneTag && sceneTagCache?.[sceneTag]) {
+      // Level 2: Same tag seen before → return cached URL
+      sceneImageUrl = sceneTagCache[sceneTag]
+      console.log(`[Image] Reuse scene (tag cache hit): ${sceneTag}`)
+    } else {
+      // Level 3: Generate new image
+      sceneImageUrl = await imageService.generateSceneImage(response.scene_description)
+      console.log(`[Image] Generated new scene: ${sceneTag}`)
+    }
 
     // 즉석 생성된 새 NPC가 있으면 목록에 포함
     const allNpcs = [...(npcs ?? [])]
@@ -265,10 +286,19 @@ router.post('/game/action', async (req: Request, res: Response) => {
       const npc = allNpcs.find(n => n.id === response.npc_speaking)
       if (npc) {
         const emotion = response.npc_emotion ?? 'neutral'
-        const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
-          ?? npc.emotions[0]?.description ?? 'neutral expression'
+        const cacheKey = `${npc.id}_${emotion}`
 
-        const portraitUrl = await imageService.generateNpcEmotion(npc, emotion, emotionDesc)
+        // ── NPC portrait: cache check ──────────────────────────────
+        let portraitUrl: string
+        if (npcPortraitCache?.[cacheKey]) {
+          portraitUrl = npcPortraitCache[cacheKey]
+          console.log(`[Image] Reuse NPC portrait (cache hit): ${cacheKey}`)
+        } else {
+          const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
+            ?? npc.emotions[0]?.description ?? 'neutral expression'
+          portraitUrl = await imageService.generateNpcEmotion(npc, emotion, emotionDesc)
+          console.log(`[Image] Generated NPC portrait: ${cacheKey}`)
+        }
 
         npcData = {
           id: npc.id,
@@ -282,7 +312,8 @@ router.post('/game/action', async (req: Request, res: Response) => {
 
     res.json({
       narration: response.narration,
-      sceneImageUrl,
+      sceneImageUrl,        // null = reuse previous on client
+      sceneTag,             // for client-side cache storage
       currentLocation: response.current_location,
       npcSpeaking: npcData ?? null,
       availableNpcs: response.available_npcs,

@@ -336,6 +336,13 @@ ${narrative.slice(0, 500)}...
 - scene_description은 영어로 작성하세요 (이미지 생성용)
 - 반드시 유효한 JSON만 반환하세요
 
+## 이미지 재사용 규칙 (비용 절감)
+- scene_tag: 장소+시간대를 나타내는 짧은 영어 슬러그 (예: "tavern_night", "forest_day", "dungeon_corridor", "city_market_day", "castle_interior", "cave_entrance"). 2-3 단어, 소문자, 언더스코어 구분.
+- reuse_scene_image: 아래 조건이 모두 해당하면 true, 하나라도 아니면 false
+  * 이전 턴과 current_location이 동일
+  * 시간대/날씨/조명이 크게 변하지 않음
+  * 장면의 전반적 분위기가 유사 (전투 시작/종료 등 극적 변화 없음)
+
 ## 주인공 정보
 이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${character.stats.level}
 배경: ${character.backstory.slice(0, 100)}
@@ -359,6 +366,8 @@ ${playerInput}
 {
   "narration": "웹소설 스타일의 서술 (4-6문단, 대사 포함, 한국어, 최소 400자)",
   "scene_description": "English description for image generation: location, atmosphere, characters present, time of day, weather, mood (max 60 words)",
+  "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
+  "reuse_scene_image": false,
   "current_location": "현재 위치명",
   "npc_speaking": "현재 대화 중인 NPC의 id (없으면 null)",
   "npc_emotion": "NPC 감정 상태 neutral/happy/angry/sad/surprised/serious/smug 중 하나 (없으면 null)",
@@ -434,6 +443,8 @@ JSON 형식:
 {
   "narration": "게임 시작 나레이션 (웹소설 스타일, 4-6문단, 한국어, 최소 500자)",
   "scene_description": "English: tavern/town starting area, fantasy RPG atmosphere, warm lantern light, busy marketplace or inn, medieval fantasy setting",
+  "scene_tag": "tavern_night",
+  "reuse_scene_image": false,
   "current_location": "시작 위치명",
   "npc_speaking": null,
   "npc_emotion": null,
