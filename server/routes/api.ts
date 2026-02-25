@@ -213,7 +213,7 @@ router.post('/session/create', async (req: Request, res: Response) => {
     background: backstory,
     backstory,
     stats: {
-      hp: 100, maxHp: 100, level: 1, experience: 0, gold: 50,
+      hp: 100, maxHp: 100, mana: 80, maxMana: 80, level: 1, experience: 0, gold: 50,
       strength: 10, dexterity: 10, intelligence: 10,
       charisma: 10, wisdom: 10, constitution: 10,
     },
