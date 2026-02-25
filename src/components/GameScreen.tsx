@@ -136,22 +136,16 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
   }
 
   return (
-    <div className="animate-fade-in">
-      {/* Scene image */}
-      {msg.sceneImageUrl && (
-        <div className="mb-3">
-          <SceneImage url={msg.sceneImageUrl} alt="Scene" />
-        </div>
-      )}
+    <div className="animate-fade-in fantasy-panel rounded-sm overflow-hidden">
 
-      {/* ── Desktop (sm+): portrait column on left + text panel ── */}
-      <div className={`hidden sm:flex gap-4 ${npc ? 'items-end' : ''}`}>
+      {/* ── Desktop (sm+): portrait column on left + text ── */}
+      <div className={`hidden sm:flex gap-4 p-5 ${npc ? 'items-start' : ''}`}>
         {npc && (
           <div className="flex-shrink-0" style={{ width: '120px' }}>
             <NpcPortrait npc={npc} emotion={msg.npcEmotion} />
           </div>
         )}
-        <div className="flex-1 fantasy-panel rounded-sm p-5">
+        <div className="flex-1">
           <p className="text-xs mb-3 font-cinzel tracking-widest"
             style={{ color: npc ? 'rgba(212,175,55,0.6)' : 'rgba(160,144,112,0.4)' }}>
             {npc ? `◆ ${npc.name}` : '◆ 나레이터'}
@@ -160,8 +154,8 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
         </div>
       </div>
 
-      {/* ── Mobile: chat-style single column ── */}
-      <div className="sm:hidden fantasy-panel rounded-sm p-4">
+      {/* ── Mobile: 채팅 스타일 단일 컬럼 ── */}
+      <div className="sm:hidden p-4">
         <div className="flex items-center gap-2 mb-3">
           {npc?.portraitUrl && (
             <img src={npc.portraitUrl} alt={npc.name}
@@ -180,6 +174,13 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
         </div>
         <div className="narrative-text text-sm">{formattedContent}</div>
       </div>
+
+      {/* ── 씬 이미지: 카드 하단에 배치 (텍스트 읽고 나서 로딩) ── */}
+      {msg.sceneImageUrl && (
+        <div style={{ borderTop: '1px solid rgba(31,22,44,0.6)' }}>
+          <SceneImage url={msg.sceneImageUrl} alt="Scene" />
+        </div>
+      )}
     </div>
   )
 }
