@@ -181,43 +181,84 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
 
 // ── Stats Bar ─────────────────────────────────────────
 function StatsBar() {
-  const { character, currentLocation, npcs } = useGameStore()
+  const { character, currentLocation } = useGameStore()
+  const prevStats = useRef(character?.stats)
+  const [flash, setFlash] = useState<{ hp?: boolean; mana?: boolean; gold?: boolean; xp?: boolean }>({})
+
+  useEffect(() => {
+    if (!character || !prevStats.current) { prevStats.current = character?.stats; return }
+    const prev = prevStats.current
+    const cur = character.stats
+    const newFlash: typeof flash = {}
+    if (cur.hp !== prev.hp) newFlash.hp = true
+    if (cur.mana !== prev.mana) newFlash.mana = true
+    if (cur.gold !== prev.gold) newFlash.gold = true
+    if (cur.experience !== prev.experience || cur.level !== prev.level) newFlash.xp = true
+    if (Object.keys(newFlash).length) {
+      setFlash(newFlash)
+      const t = setTimeout(() => setFlash({}), 1200)
+      prevStats.current = cur
+      return () => clearTimeout(t)
+    }
+    prevStats.current = cur
+  }, [character?.stats])
+
   if (!character) return null
 
-  const hpPct = (character.stats.hp / character.stats.maxHp) * 100
+  const s = character.stats
+  const hpPct = (s.hp / s.maxHp) * 100
+  const manaPct = s.maxMana > 0 ? (s.mana / s.maxMana) * 100 : 0
+  const expPct = Math.min(100, (s.experience / (s.level * 100)) * 100)
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-xs"
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 text-xs"
       style={{ background: 'rgba(5,5,10,0.95)' }}>
 
-      {/* Row 1: Name + HP + Gold (always together) */}
-      <div className="flex items-center gap-4 flex-1 min-w-0">
-        <div className="flex items-center gap-2 shrink-0">
-          <span style={{ color: 'rgba(212,175,55,0.6)' }}>⚔</span>
-          <span className="font-cinzel" style={{ color: '#D4AF37' }}>
-            {character.name}
-          </span>
-          <span style={{ color: 'rgba(160,144,112,0.5)' }}>
-            Lv.{character.stats.level} {character.characterClass}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span style={{ color: '#e74c3c' }}>♥</span>
-          <div className="w-16 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,0,0,0.1)' }}>
-            <div className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${hpPct}%`, background: hpPct > 50 ? '#e74c3c' : hpPct > 25 ? '#e67e22' : '#c0392b' }} />
-          </div>
-          <span style={{ color: 'rgba(232,213,176,0.6)' }}>{character.stats.hp}/{character.stats.maxHp}</span>
-        </div>
-
-        <div className="flex items-center gap-1 shrink-0" style={{ color: 'rgba(212,175,55,0.6)' }}>
-          <span>💰</span>
-          <span style={{ color: 'rgba(232,213,176,0.6)' }}>{character.stats.gold}G</span>
+      {/* Name + Level */}
+      <div className="flex items-center gap-2 shrink-0">
+        <span style={{ color: 'rgba(212,175,55,0.6)' }}>⚔</span>
+        <span className="font-cinzel" style={{ color: '#D4AF37' }}>{s.level >= 8 ? '★ ' : ''}{character.name}</span>
+        <span style={{ color: 'rgba(160,144,112,0.5)' }}>Lv.{s.level} {character.characterClass}</span>
+        {/* XP bar */}
+        <div className="w-10 h-1 rounded-full overflow-hidden" title={`경험치 ${s.experience}/${s.level * 100}`}
+          style={{ background: 'rgba(255,255,255,0.07)', outline: flash.xp ? '1px solid rgba(255,220,100,0.7)' : 'none', transition: 'outline 0.3s' }}>
+          <div className="h-full rounded-full transition-all duration-700"
+            style={{ width: `${expPct}%`, background: 'rgba(212,175,55,0.6)' }} />
         </div>
       </div>
 
-      {/* Row 2 on mobile / inline on desktop: Location */}
+      {/* HP bar */}
+      <div className="flex items-center gap-1.5 shrink-0"
+        style={{ outline: flash.hp ? `1px solid ${s.hp < s.maxHp * 0.3 ? '#e74c3c' : 'rgba(231,76,60,0.5)'}` : 'none', borderRadius: '2px', transition: 'outline 0.3s' }}>
+        <span style={{ color: '#e74c3c' }}>♥</span>
+        <div className="w-14 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,0,0,0.1)' }}>
+          <div className="h-full rounded-full transition-all duration-500"
+            style={{ width: `${hpPct}%`, background: hpPct > 50 ? '#e74c3c' : hpPct > 25 ? '#e67e22' : '#c0392b' }} />
+        </div>
+        <span style={{ color: 'rgba(232,213,176,0.6)' }}>{s.hp}/{s.maxHp}</span>
+      </div>
+
+      {/* Mana bar */}
+      {s.maxMana > 0 && (
+        <div className="flex items-center gap-1.5 shrink-0"
+          style={{ outline: flash.mana ? '1px solid rgba(100,160,255,0.5)' : 'none', borderRadius: '2px', transition: 'outline 0.3s' }}>
+          <span style={{ color: '#5b9cf6' }}>✦</span>
+          <div className="w-14 h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(91,156,246,0.1)' }}>
+            <div className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${manaPct}%`, background: manaPct > 50 ? '#5b9cf6' : manaPct > 20 ? '#8b5cf6' : '#4c1d95' }} />
+          </div>
+          <span style={{ color: 'rgba(200,220,255,0.6)' }}>{s.mana}/{s.maxMana}</span>
+        </div>
+      )}
+
+      {/* Gold */}
+      <div className="flex items-center gap-1 shrink-0"
+        style={{ outline: flash.gold ? '1px solid rgba(212,175,55,0.6)' : 'none', borderRadius: '2px', transition: 'outline 0.3s' }}>
+        <span>💰</span>
+        <span style={{ color: 'rgba(232,213,176,0.6)' }}>{s.gold}G</span>
+      </div>
+
+      {/* Location */}
       <div className="w-full sm:w-auto sm:ml-auto sm:text-right truncate"
         style={{ color: 'rgba(232,213,176,0.7)' }}>
         <span style={{ color: 'rgba(160,144,112,0.5)' }}>📍 </span>

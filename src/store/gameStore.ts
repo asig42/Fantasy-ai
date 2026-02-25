@@ -11,7 +11,30 @@ import type {
   CharacterClass,
   BackgroundOption,
   GameSession,
+  CharacterStats,
 } from '../types/game'
+
+// ─── Class-based initial stats ────────────────────────────────
+function getInitialStats(characterClass: CharacterClass): CharacterStats {
+  const classStats: Record<CharacterClass, { hp: number; mana: number }> = {
+    '전사':    { hp: 120, mana: 30 },
+    '마법사':  { hp: 80,  mana: 120 },
+    '도적':    { hp: 90,  mana: 50 },
+    '성직자':  { hp: 100, mana: 100 },
+    '사냥꾼':  { hp: 100, mana: 40 },
+    '연금술사':{ hp: 85,  mana: 85 },
+    '음유시인':{ hp: 85,  mana: 90 },
+    '팔라딘':  { hp: 110, mana: 70 },
+  }
+  const base = classStats[characterClass] ?? { hp: 100, mana: 80 }
+  return {
+    hp: base.hp, maxHp: base.hp,
+    mana: base.mana, maxMana: base.mana,
+    level: 1, experience: 0, gold: 50,
+    strength: 10, dexterity: 10, intelligence: 10,
+    charisma: 10, wisdom: 10, constitution: 10,
+  }
+}
 
 // ─── Server session helpers ───────────────────────────────────
 async function saveSessionToServer(session: GameSession) {
@@ -380,11 +403,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         characterClass: data.characterClass,
         background: data.backstory,
         backstory: data.backstory,
-        stats: {
-          hp: 100, maxHp: 100, level: 1, experience: 0, gold: 50,
-          strength: 10, dexterity: 10, intelligence: 10,
-          charisma: 10, wisdom: 10, constitution: 10,
-        },
+        stats: getInitialStats(data.characterClass),
       }
 
       const sessionId = uuidv4()
@@ -515,7 +534,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         } else if (data.type === 'done') {
           const {
             narration, summary, sceneImageUrl, sceneImagePending: imagePending, sceneTag,
-            currentLocation: newLoc, npcSpeaking, gameOver, newNpc, suggestedActions,
+            currentLocation: newLoc, npcSpeaking, gameOver, newNpc, suggestedActions, statChanges,
           } = data as {
             narration: string
             summary: string
@@ -527,6 +546,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             gameOver: boolean
             newNpc: NPC | null
             suggestedActions: string[]
+            statChanges: { hp_change: number; mana_change: number; gold_change: number; experience_gain: number } | null
           }
 
           // null + imagePending → image is coming async, don't fallback
@@ -566,6 +586,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
             npcsPresent: [],
           }
 
+          // Apply stat changes from AI
+          const prevChar = get().character
+          let updatedCharacter = prevChar
+          if (prevChar && statChanges) {
+            const s = prevChar.stats
+            let newHp = Math.max(0, Math.min(s.maxHp, s.hp + (statChanges.hp_change ?? 0)))
+            let newMana = Math.max(0, Math.min(s.maxMana, s.mana + (statChanges.mana_change ?? 0)))
+            const newGold = Math.max(0, s.gold + (statChanges.gold_change ?? 0))
+            let newExp = s.experience + (statChanges.experience_gain ?? 0)
+            let newLevel = s.level
+            let newMaxHp = s.maxHp
+            let newMaxMana = s.maxMana
+            const expThreshold = 100 * s.level
+            if (newExp >= expThreshold) {
+              newLevel += 1
+              newExp -= expThreshold
+              newMaxHp += 10
+              newMaxMana += 5
+              newHp = Math.min(newHp + 20, newMaxHp)
+              newMana = Math.min(newMana + 10, newMaxMana)
+            }
+            updatedCharacter = {
+              ...prevChar,
+              stats: { ...s, hp: newHp, mana: newMana, gold: newGold, experience: newExp, level: newLevel, maxHp: newMaxHp, maxMana: newMaxMana },
+            }
+          }
+
           set({
             messages: newMessages,
             currentLocation: updatedLocation,
@@ -575,6 +622,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             suggestedActions: suggestedActions ?? [],
             isProcessing: false,
             streamingContent: '',
+            ...(updatedCharacter !== prevChar ? { character: updatedCharacter } : {}),
             ...(gameOver ? { phase: 'start' } : {}),
           })
 
@@ -590,7 +638,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           if (npcSpeaking?.portraitUrl) {
             set(state => ({
               npcs: state.npcs.map(n =>
-                n.id === npcSpeaking.id ? { ...n, portraitUrl: npcSpeaking.portraitUrl } : n
+                n.id === npcSpeaking.id ? { ...n, portraitUrl: npcSpeaking.portraitUrl ?? undefined } : n
               ),
             }))
           }
@@ -599,7 +647,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
             const existing = sessions[sessionId]
             if (existing) {
-              const updatedSession = { ...existing, messages: newMessages, currentLocation: updatedLocation, currentScene: newScene, updatedAt: Date.now() }
+              const updatedSession = {
+                ...existing,
+                character: updatedCharacter ?? existing.character,
+                messages: newMessages,
+                currentLocation: updatedLocation,
+                currentScene: newScene,
+                updatedAt: Date.now(),
+              }
               sessions[sessionId] = updatedSession
               lsSet(LS_SESSIONS, sessions)
               saveSessionToServer(updatedSession)

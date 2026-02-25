@@ -341,6 +341,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
       gameOver: response.game_over,
       newNpc: response.new_npc ?? null,
       suggestedActions: response.suggested_actions ?? [],
+      statChanges: response.stat_changes ?? null,
     })
 
     // ── Generate images async, send events when ready ──────────

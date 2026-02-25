@@ -94,6 +94,8 @@ export type CharacterClass =
 export interface CharacterStats {
   hp: number
   maxHp: number
+  mana: number
+  maxMana: number
   level: number
   experience: number
   gold: number
@@ -192,6 +194,14 @@ export interface GameActionResponse {
   gameOver: boolean
 }
 
+// ---------- Stat Changes from AI ----------
+export interface StatChanges {
+  hp_change: number       // negative = damage, positive = healing (0 if none)
+  mana_change: number     // negative = mana used, positive = restored (0 if none)
+  gold_change: number     // negative = spent, positive = earned (0 if none)
+  experience_gain: number // XP gained this turn (0 if none)
+}
+
 // ---------- Claude Internal Response ----------
 export interface ClaudeGameResponse {
   narration: string
@@ -206,4 +216,5 @@ export interface ClaudeGameResponse {
   game_over: boolean
   new_npc?: NPC  // Dynamically created NPC (when Claude introduces a new character)
   suggested_actions: string[]  // 3 context-aware action suggestions for the player
+  stat_changes: StatChanges    // Gameplay stat changes for this turn
 }

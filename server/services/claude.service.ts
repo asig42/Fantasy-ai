@@ -322,7 +322,13 @@ const GM_JSON_FORMAT = `{
   "available_npcs": ["현재 장면에 있는 NPC id 배열"],
   "game_over": false,
   "new_npc": null,
-  "suggested_actions": ["현재 상황에 맞는 행동 제안 1 (10자 이내)", "행동 제안 2 (10자 이내)", "행동 제안 3 (10자 이내)"]
+  "suggested_actions": ["현재 상황에 맞는 행동 제안 1 (10자 이내)", "행동 제안 2 (10자 이내)", "행동 제안 3 (10자 이내)"],
+  "stat_changes": {
+    "hp_change": 0,
+    "mana_change": 0,
+    "gold_change": 0,
+    "experience_gain": 0
+  }
 }`
 
 const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
@@ -368,6 +374,13 @@ function buildSystemPrompt(
     `- ID: ${n.id} | ${n.title} ${n.name} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment}`
   ).join('\n')
 
+  const s = character.stats
+  const hpPct = Math.round((s.hp / s.maxHp) * 100)
+  const manaPct = Math.round((s.mana / (s.maxMana || 1)) * 100)
+  const hpStatus = hpPct >= 70 ? '건강함' : hpPct >= 30 ? '부상 있음' : '중상 (위험)'
+  const manaStatus = manaPct >= 50 ? '마나 충분' : manaPct >= 20 ? '마나 부족' : '마나 고갈'
+  const levelDesc = s.level <= 3 ? '초보 모험가' : s.level <= 7 ? '성장하는 모험가' : '베테랑 모험가'
+
   return `당신은 판타지 TRPG 게임의 게임 마스터입니다.
 세계: ${world.name}
 세계 배경: ${world.lore}
@@ -394,9 +407,43 @@ ${narrative.slice(0, 500)}...
   * 시간대/날씨/조명이 크게 변하지 않음
   * 장면의 전반적 분위기가 유사 (전투 시작/종료 등 극적 변화 없음)
 
-## 주인공 정보
-이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${character.stats.level}
+## 주인공 현재 상태
+이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${s.level} (${levelDesc})
+HP: ${s.hp}/${s.maxHp} (${hpStatus}) | 마나: ${s.mana}/${s.maxMana} (${manaStatus}) | 골드: ${s.gold}G | 경험치: ${s.experience}/${s.level * 100}
 배경: ${character.backstory.slice(0, 100)}
+
+## 스탯에 따른 서술 지침
+레벨별 묘사:
+- 레벨 1~3: 아직 미숙함. 강적 앞에서 위축되고, 실력 있는 전사나 마법사를 보면 압도됨. NPC들이 주인공을 어린 신참 취급할 수 있음.
+- 레벨 4~7: 실력이 쌓임. 자신감이 생기고, 주변에서 인정받기 시작함. 어느 정도 위험한 상황도 대처 가능.
+- 레벨 8+: 베테랑. 강자로 인정받음. NPC들이 존경이나 두려움을 보임.
+
+HP 상태별 묘사:
+- 건강함 (70%+): 자신감 있게 행동. 활기차고 민첩한 서술.
+- 부상 있음 (30~70%): 상처에서 통증이 느껴짐. 신중하게 행동. 숨이 가쁘거나 움직임이 둔해짐.
+- 중상 (30% 미만): 극도로 위험. 행동할 때마다 고통. 절박한 상황이 서술에 반영됨.
+
+마나 상태별 묘사:
+- 마나 충분 (50%+): 마법/능력 자유롭게 사용 가능.
+- 마나 부족 (20~50%): 마법 사용 시 집중력 소모가 크고 피로감 증가.
+- 마나 고갈 (20% 미만): 마법 사용 거의 불가. 강제로 쓰면 두통, 코피, 극도의 피로 등 부작용.
+
+골드 상태별 묘사:
+- 50G+: 여유 있음. 숙박, 식사, 물품 구매 등 선택지 많음.
+- 10~50G: 빠듯함. 비싼 서비스나 아이템은 부담.
+- 10G 미만: 매우 가난함. 기본 식사도 어려움. 일부 NPC가 무시하거나 거래를 거절할 수 있음.
+
+## stat_changes 규칙 (매 턴 반드시 채워야 함)
+- hp_change: 전투 피해(음수), 치유(양수), 변화 없으면 0
+  * 약한 적(레벨보다 낮음): -5 ~ -15, 동급 적: -10 ~ -25, 강한 적(레벨보다 높음): -20 ~ -40
+  * 치유 포션/마법: +15 ~ +30, 짧은 휴식: +5 ~ +10
+- mana_change: 마법/능력 사용(음수), 마나 회복(양수), 변화 없으면 0
+  * 소마법: -5 ~ -10, 중간 마법: -15 ~ -25, 강력한 마법: -30 ~ -50
+  * 마나 포션/명상/휴식: +20 ~ +50
+- gold_change: 구매(음수), 획득/보상(양수), 변화 없으면 0
+  * 거래 가격에 맞게 현실적으로 설정
+- experience_gain: 의미 있는 행동에만 양수, 아무것도 안 하거나 단순 대화는 0
+  * 일반 전투/탐험/대화: 5 ~ 15, 중요 퀘스트/이벤트: 20 ~ 40, 보스 처치/대사건: 50 ~ 80
 
 현재 위치: ${currentLocation}`
 }
