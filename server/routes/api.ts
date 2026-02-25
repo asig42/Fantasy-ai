@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import * as claude from '../services/claude.service'
 import * as imageService from '../services/image.service'
+import { saveConfig } from '../services/storage.service'
 import type {
   WorldData,
   NPC,
@@ -36,7 +37,7 @@ router.get('/config', (_req: Request, res: Response) => {
 })
 
 // ================================================================
-// POST /api/config — Set API keys (local dev only)
+// POST /api/config — Set API keys
 // ================================================================
 router.post('/config', async (req: Request, res: Response) => {
   try {
@@ -46,9 +47,15 @@ router.post('/config', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'anthropicApiKey is required' })
     }
 
-    const valid = await claude.testApiKey(anthropicApiKey.trim())
-    if (!valid) {
-      return res.status(400).json({ error: 'API 키가 유효하지 않습니다. Anthropic 콘솔에서 키를 확인해주세요.' })
+    const isVercel = !!process.env.VERCEL
+
+    // On Vercel, skip the test call (dynamic container = no persistent state anyway)
+    // On local dev, validate the key with a real API call
+    if (!isVercel) {
+      const valid = await claude.testApiKey(anthropicApiKey.trim())
+      if (!valid) {
+        return res.status(400).json({ error: 'API 키가 유효하지 않습니다. Anthropic 콘솔에서 키를 확인해주세요.' })
+      }
     }
 
     claude.setAnthropicApiKey(anthropicApiKey.trim())
@@ -56,15 +63,16 @@ router.post('/config', async (req: Request, res: Response) => {
       process.env.FAL_KEY = falKey.trim()
     }
 
-    // Persist to disk only if storage is available (local dev)
-    try {
-      const { saveConfig } = await import('../services/storage.service')
-      await saveConfig({ anthropicApiKey: anthropicApiKey.trim(), falKey: falKey?.trim() })
-    } catch {
-      // Vercel: no persistent storage, that's fine
+    // Persist to disk (local dev only — Vercel filesystem is read-only)
+    if (!isVercel) {
+      try {
+        await saveConfig({ anthropicApiKey: anthropicApiKey.trim(), falKey: falKey?.trim() })
+      } catch {
+        // ignore write errors
+      }
     }
 
-    res.json({ success: true, message: 'API 키가 저장되었습니다.' })
+    res.json({ success: true, message: 'API 키가 설정되었습니다.' })
   } catch (err) {
     console.error('[API] Config error:', err)
     res.status(500).json({ error: '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' })
