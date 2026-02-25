@@ -242,9 +242,6 @@ export default function GameScreen() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  const latestMsg = messages[messages.length - 1]
-  const currentNpc = latestMsg?.npcId ? npcs.find(n => n.id === latestMsg.npcId) : null
-
   // Auto-scroll when new content arrives
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -370,14 +367,6 @@ export default function GameScreen() {
 
           <div ref={messagesEndRef} />
         </div>
-
-        {/* NPC side panel — desktop only */}
-        {currentNpc && (
-          <div className="hidden sm:flex w-40 flex-shrink-0 flex-col items-center justify-end pb-4 px-2"
-            style={{ borderLeft: '1px solid #1a1020', background: 'rgba(5,5,10,0.7)' }}>
-            <NpcPortrait npc={currentNpc} emotion={latestMsg?.npcEmotion} />
-          </div>
-        )}
       </div>
 
       {/* Input area */}
