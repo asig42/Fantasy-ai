@@ -83,9 +83,9 @@ export async function generateMapImage(
         num_inference_steps: 4,
         num_images: 1,
       },
-    }) as unknown as { images: Array<{ url: string }> }
+    }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.images[0]?.url ?? placeholderDataUrl('map', worldName)
+    return result.data?.images?.[0]?.url ?? placeholderDataUrl('map', worldName)
   } catch (err) {
     console.error('[Image] Map generation failed:', err)
     return placeholderDataUrl('map', worldName)
@@ -111,9 +111,9 @@ export async function generateNpcPortrait(
         num_inference_steps: 4,
         num_images: 1,
       },
-    }) as unknown as { images: Array<{ url: string }> }
+    }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.images[0]?.url ?? placeholderDataUrl('portrait', npc.name)
+    return result.data?.images?.[0]?.url ?? placeholderDataUrl('portrait', npc.name)
   } catch (err) {
     console.error(`[Image] Portrait failed for ${npc.name}:`, err)
     return placeholderDataUrl('portrait', npc.name)
@@ -151,9 +151,9 @@ export async function generateNpcEmotion(
         num_inference_steps: 4,
         num_images: 1,
       },
-    }) as unknown as { images: Array<{ url: string }> }
+    }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.images[0]?.url ?? placeholderDataUrl('portrait', npc.name)
+    return result.data?.images?.[0]?.url ?? placeholderDataUrl('portrait', npc.name)
   } catch (err) {
     console.error('[Image] Emotion portrait failed:', err)
     return placeholderDataUrl('portrait', npc.name)
@@ -177,9 +177,9 @@ export async function generateSceneImage(sceneDescription: string): Promise<stri
         num_inference_steps: 4,
         num_images: 1,
       },
-    }) as unknown as { images: Array<{ url: string }> }
+    }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.images[0]?.url ?? placeholderDataUrl('scene', sceneDescription.slice(0, 40))
+    return result.data?.images?.[0]?.url ?? placeholderDataUrl('scene', sceneDescription.slice(0, 40))
   } catch (err) {
     console.error('[Image] Scene generation failed:', err)
     return placeholderDataUrl('scene', sceneDescription.slice(0, 40))

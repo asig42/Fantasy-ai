@@ -255,13 +255,6 @@ export default function GameScreen() {
         {/* Messages column */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
 
-          {/* Current scene (latest) at top */}
-          {currentScene?.imageUrl && messages.length > 0 && (
-            <div className="sticky top-0 z-10 -mx-4 -mt-4 mb-2">
-              <SceneImage url={currentScene.imageUrl} alt="Current Scene" />
-            </div>
-          )}
-
           {/* Messages */}
           {messages.map(msg => (
             <MessageBlock key={msg.id} msg={msg} npcs={npcs} />

@@ -228,6 +228,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // ── Init game (step-by-step) ──────────────────────────────
   initGame: async () => {
+    // If world already loaded, skip generation and go to worldmap
+    const { world: existingWorld } = get()
+    if (existingWorld) {
+      set({ phase: 'worldmap' })
+      return
+    }
+
     // Reset steps to initial state
     const steps = INIT_STEPS.map(s => ({ ...s }))
     set({ isLoading: true, error: null, phase: 'generating', loadingSteps: steps })
@@ -287,7 +294,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  // ── Load existing data from localStorage ──────────────────
+  // ── Load existing data from localStorage (+ server fallback) ─
   loadGameData: async () => {
     try {
       const configRes = await axios.get('/api/config')
@@ -298,9 +305,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     get().loadSessions()
 
-    const world = lsGet<WorldData>(LS_WORLD)
-    const npcs = lsGet<NPC[]>(LS_NPCS)
-    const narrative = lsGet<string>(LS_NARRATIVE)
+    let world = lsGet<WorldData>(LS_WORLD)
+    let npcs = lsGet<NPC[]>(LS_NPCS)
+    let narrative = lsGet<string>(LS_NARRATIVE)
+
+    // If localStorage is empty, try to load from server (returning user on new device/browser)
+    if (!world) {
+      try {
+        const [worldRes, npcsRes, narrativeRes] = await Promise.all([
+          axios.get('/api/world', { timeout: 5000 }),
+          axios.get('/api/npcs', { timeout: 5000 }),
+          axios.get('/api/narrative', { timeout: 5000 }),
+        ])
+        if (worldRes.data.world) {
+          world = worldRes.data.world as WorldData
+          npcs = npcsRes.data.npcs as NPC[]
+          narrative = narrativeRes.data.narrative as string
+          lsSet(LS_WORLD, world)
+          lsSet(LS_NPCS, npcs)
+          lsSet(LS_NARRATIVE, narrative)
+        }
+      } catch {
+        // no world on server yet, that's fine
+      }
+    }
 
     if (world) {
       set({

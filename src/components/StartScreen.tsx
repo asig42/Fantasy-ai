@@ -12,7 +12,7 @@ const PARTICLES = Array.from({ length: 12 }, (_, i) => ({
 export default function StartScreen() {
   const {
     initGame, isLoading, error, loadGameData,
-    hasApiKey, savedSessions, saveApiKey, resumeSession,
+    hasApiKey, world, savedSessions, saveApiKey, resumeSession,
   } = useGameStore()
 
   const [showError, setShowError] = useState(false)
@@ -221,8 +221,33 @@ export default function StartScreen() {
               <div className="loading-rune w-5 h-5" />
               세계 창조 중...
             </span>
-          ) : !hasApiKey ? '⚙ API 키 설정 후 시작 가능' : '⚔ 새 게임 시작'}
+          ) : !hasApiKey ? '⚙ API 키 설정 후 시작 가능'
+            : world ? '⚔ 새 캐릭터 시작 (기존 세계)'
+            : '⚔ 새 게임 시작'}
         </button>
+
+        {/* Regenerate world button (only when world exists) */}
+        {world && hasApiKey && (
+          <button
+            className="w-full py-2 rounded border text-xs font-cinzel tracking-wider"
+            style={{
+              borderColor: 'rgba(212,175,55,0.2)',
+              color: 'rgba(160,144,112,0.6)',
+              background: 'transparent',
+            }}
+            disabled={isLoading}
+            onClick={() => {
+              if (confirm('새 세계를 창조하시겠습니까? 현재 세계 데이터가 사라집니다.')) {
+                localStorage.removeItem('fantasy-ai-world')
+                localStorage.removeItem('fantasy-ai-npcs')
+                localStorage.removeItem('fantasy-ai-narrative')
+                initGame()
+              }
+            }}
+          >
+            ↺ 새 세계 창조
+          </button>
+        )}
 
         {/* Load saved game button */}
         {savedSessions.length > 0 && (
