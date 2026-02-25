@@ -288,53 +288,85 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
 
     if (!response) throw new Error('No response from Claude')
 
-    // ── Scene image ────────────────────────────────────────────
     const sceneTag = response.scene_tag ?? ''
+
+    // ── Resolve scene image from cache ─────────────────────────
     let sceneImageUrl: string | null = null
+    let sceneImagePending = false
 
     if (response.reuse_scene_image) {
-      sceneImageUrl = null
+      sceneImageUrl = null                              // client keeps previous
     } else if (sceneTag && sceneTagCache?.[sceneTag]) {
-      sceneImageUrl = sceneTagCache[sceneTag]
+      sceneImageUrl = sceneTagCache[sceneTag]           // cache hit
     } else {
-      sceneImageUrl = await imageService.generateSceneImage(response.scene_description)
+      sceneImagePending = true                          // will generate async
     }
 
-    // ── NPC portrait ───────────────────────────────────────────
+    // ── Resolve NPC portrait from cache ────────────────────────
     const allNpcs = [...(npcs ?? [])]
     if (response.new_npc) allNpcs.push(response.new_npc)
 
-    let npcData = undefined
+    type PendingPortrait = { npc: NPC; emotion: string; emotionDesc: string }
+    let npcData: { id: string; name: string; title: string; emotion: string; portraitUrl: string | null } | null = null
+    let pendingPortrait: PendingPortrait | null = null
+
     if (response.npc_speaking) {
       const npc = allNpcs.find(n => n.id === response.npc_speaking)
       if (npc) {
         const emotion = response.npc_emotion ?? 'neutral'
         const cacheKey = `${npc.id}_${emotion}`
-        let portraitUrl: string
-        if (npcPortraitCache?.[cacheKey]) {
-          portraitUrl = npcPortraitCache[cacheKey]
+        const cachedPortrait = npcPortraitCache?.[cacheKey]
+        if (cachedPortrait) {
+          npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: cachedPortrait }
         } else {
           const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
             ?? npc.emotions[0]?.description ?? 'neutral expression'
-          portraitUrl = await imageService.generateNpcEmotion(npc, emotion, emotionDesc)
+          npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: null }
+          pendingPortrait = { npc, emotion, emotionDesc }
         }
-        npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl }
       }
     }
 
+    // ── Send 'done' immediately — text is ready, images may follow ──
     sendEvent({
       type: 'done',
       narration: response.narration,
       summary: response.summary ?? '',
       sceneImageUrl,
+      sceneImagePending,
       sceneTag,
       currentLocation: response.current_location,
-      npcSpeaking: npcData ?? null,
+      npcSpeaking: npcData,
       availableNpcs: response.available_npcs,
       gameOver: response.game_over,
       newNpc: response.new_npc ?? null,
       suggestedActions: response.suggested_actions ?? [],
     })
+
+    // ── Generate images async, send events when ready ──────────
+    const pendingTasks: Promise<void>[] = []
+
+    if (sceneImagePending) {
+      pendingTasks.push(
+        imageService.generateSceneImage(response.scene_description)
+          .then(url => { sendEvent({ type: 'image', sceneImageUrl: url, sceneTag }) })
+          .catch(err => {
+            console.error('[Image] Generation failed:', err)
+            sendEvent({ type: 'image', sceneImageUrl: null, sceneTag })
+          })
+      )
+    }
+
+    if (pendingPortrait) {
+      const { npc, emotion, emotionDesc } = pendingPortrait
+      pendingTasks.push(
+        imageService.generateNpcEmotion(npc, emotion, emotionDesc)
+          .then(url => { sendEvent({ type: 'portrait', npcId: npc.id, emotion, portraitUrl: url }) })
+          .catch(err => { console.error('[Portrait] Generation failed:', err) })
+      )
+    }
+
+    await Promise.all(pendingTasks)
     res.end()
   } catch (err) {
     console.error('[API] Game action stream error:', err)

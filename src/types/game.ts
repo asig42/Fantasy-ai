@@ -141,6 +141,7 @@ export interface GameMessage {
   npcEmotion?: string
   timestamp: number
   sceneImageUrl?: string
+  sceneImagePending?: boolean  // true while server is generating the image async
   suggestedActions?: string[]  // AI-suggested player actions for this turn
 }
 

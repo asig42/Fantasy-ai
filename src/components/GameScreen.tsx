@@ -3,7 +3,7 @@ import { useGameStore } from '../store/gameStore'
 import type { GameMessage, NPC } from '../types/game'
 
 // ── Scene image display ──────────────────────────────
-function SceneImage({ url, alt }: { url?: string; alt: string }) {
+function SceneImage({ url, alt, pending }: { url?: string; alt: string; pending?: boolean }) {
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState(false)
 
@@ -19,7 +19,9 @@ function SceneImage({ url, alt }: { url?: string; alt: string }) {
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center">
             <div className="loading-rune mx-auto mb-2" />
-            <p className="text-xs" style={{ color: 'rgba(212,175,55,0.4)' }}>장면 묘사 중...</p>
+            <p className="text-xs" style={{ color: 'rgba(212,175,55,0.4)' }}>
+              {pending ? '장면 이미지 생성 중...' : '장면 묘사 중...'}
+            </p>
           </div>
         </div>
       </div>
@@ -62,49 +64,44 @@ function SceneImage({ url, alt }: { url?: string; alt: string }) {
   )
 }
 
-// ── NPC Portrait ─────────────────────────────────────
-function NpcPortrait({ npc, emotion }: { npc: NPC; emotion?: string }) {
+
+// ── Chat Avatar ───────────────────────────────────────
+function ChatAvatar({ npc }: { npc: NPC | null }) {
   const [loaded, setLoaded] = useState(false)
-  const portraitUrl = npc.portraitUrl
+
+  if (npc?.portraitUrl) {
+    return (
+      <div className="relative" style={{ width: '52px', height: '52px', flexShrink: 0 }}>
+        <img
+          src={npc.portraitUrl}
+          alt={npc.name}
+          className="w-full h-full rounded-full object-cover"
+          style={{
+            objectPosition: 'top',
+            border: '1.5px solid rgba(212,175,55,0.45)',
+            opacity: loaded ? 1 : 0,
+            transition: 'opacity 0.4s',
+          }}
+          onLoad={() => setLoaded(true)}
+        />
+        {!loaded && (
+          <div className="absolute inset-0 rounded-full flex items-center justify-center"
+            style={{ background: 'rgba(15,10,25,0.9)', border: '1.5px solid rgba(212,175,55,0.2)' }}>
+            <div className="loading-rune w-4 h-4" />
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div className="relative h-full flex flex-col items-center">
-      {/* Portrait */}
-      <div className="relative flex-1 flex items-end overflow-hidden"
-        style={{ maxHeight: '300px', minWidth: '120px' }}>
-        {portraitUrl ? (
-          <img src={portraitUrl} alt={npc.name}
-            className="npc-portrait"
-            style={{ opacity: loaded ? 1 : 0, transition: 'opacity 0.5s' }}
-            onLoad={() => setLoaded(true)}
-          />
-        ) : (
-          <div className="w-24 h-32 flex items-center justify-center text-5xl"
-            style={{ filter: 'drop-shadow(0 0 15px rgba(212,175,55,0.3))' }}>
-            👤
-          </div>
-        )}
-        {!loaded && portraitUrl && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="loading-rune w-8 h-8" />
-          </div>
-        )}
-
-        {/* Glow effect */}
-        <div className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none"
-          style={{ background: 'linear-gradient(to top, rgba(5,5,8,0.95), transparent)' }} />
-      </div>
-
-      {/* Name tag */}
-      <div className="mt-1 text-center px-2 pb-1">
-        <p className="font-cinzel text-xs" style={{ color: '#D4AF37' }}>{npc.title}</p>
-        <p className="font-cinzel text-sm" style={{ color: 'rgba(232,213,176,0.9)' }}>{npc.name}</p>
-        {emotion && emotion !== 'neutral' && (
-          <p className="text-xs mt-0.5" style={{ color: 'rgba(160,144,112,0.5)' }}>
-            [{emotion}]
-          </p>
-        )}
-      </div>
+    <div className="flex items-center justify-center rounded-full text-2xl"
+      style={{
+        width: '52px', height: '52px', flexShrink: 0,
+        background: 'rgba(15,10,25,0.9)',
+        border: '1.5px solid rgba(212,175,55,0.2)',
+      }}>
+      {npc ? '👤' : '📜'}
     </div>
   )
 }
@@ -136,51 +133,48 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
   }
 
   return (
-    <div className="animate-fade-in fantasy-panel rounded-sm">
+    <div className="animate-fade-in flex items-start gap-3">
 
-      {/* ── Desktop (sm+): portrait sticky on left + text ── */}
-      <div className={`hidden sm:flex gap-4 p-5 ${npc ? 'items-start' : ''}`}>
-        {npc && (
-          <div className="flex-shrink-0 self-start" style={{ width: '120px', position: 'sticky', top: '16px' }}>
-            <NpcPortrait npc={npc} emotion={msg.npcEmotion} />
-          </div>
+      {/* ── Left: avatar (sticky) ── */}
+      <div className="flex-shrink-0 self-start flex flex-col items-center gap-1"
+        style={{ position: 'sticky', top: '16px' }}>
+        <ChatAvatar npc={npc ?? null} />
+        <p className="font-cinzel text-center leading-tight"
+          style={{
+            fontSize: '10px',
+            color: npc ? 'rgba(212,175,55,0.7)' : 'rgba(160,144,112,0.5)',
+            maxWidth: '56px',
+            overflow: 'hidden',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+          }}>
+          {npc?.name ?? 'GM'}
+        </p>
+        {npc && msg.npcEmotion && msg.npcEmotion !== 'neutral' && (
+          <p style={{ fontSize: '9px', color: 'rgba(160,144,112,0.45)', maxWidth: '56px', textAlign: 'center' }}>
+            [{msg.npcEmotion}]
+          </p>
         )}
-        <div className="flex-1">
-          <p className="text-xs mb-3 font-cinzel tracking-widest"
-            style={{ color: npc ? 'rgba(212,175,55,0.6)' : 'rgba(160,144,112,0.4)' }}>
-            {npc ? `◆ ${npc.name}` : '◆ 나레이터'}
+      </div>
+
+      {/* ── Right: message bubble ── */}
+      <div className="flex-1 min-w-0 fantasy-panel rounded-sm">
+        <div className="p-4">
+          <p className="text-xs mb-2 font-cinzel tracking-widest"
+            style={{ color: npc ? 'rgba(212,175,55,0.55)' : 'rgba(160,144,112,0.4)' }}>
+            {npc ? `◆ ${npc.title} ${npc.name}` : '◆ 나레이터'}
           </p>
           <div className="narrative-text text-sm">{formattedContent}</div>
         </div>
-      </div>
 
-      {/* ── Mobile: 채팅 스타일 단일 컬럼 ── */}
-      <div className="sm:hidden p-4">
-        <div className="flex items-center gap-2 mb-3">
-          {npc?.portraitUrl && (
-            <img src={npc.portraitUrl} alt={npc.name}
-              className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-              style={{ objectPosition: 'top', border: '1px solid rgba(212,175,55,0.35)' }} />
-          )}
-          <div className="min-w-0">
-            <p className="text-xs font-cinzel tracking-widest leading-tight"
-              style={{ color: npc ? 'rgba(212,175,55,0.7)' : 'rgba(160,144,112,0.45)' }}>
-              {npc ? `◆ ${npc.name}` : '◆ 나레이터'}
-            </p>
-            {npc && msg.npcEmotion && msg.npcEmotion !== 'neutral' && (
-              <p className="text-xs" style={{ color: 'rgba(160,144,112,0.45)' }}>[{msg.npcEmotion}]</p>
-            )}
+        {/* ── Scene image: show loading box if pending, show image when ready ── */}
+        {(msg.sceneImageUrl || msg.sceneImagePending) && (
+          <div style={{ borderTop: '1px solid rgba(31,22,44,0.6)', overflow: 'hidden' }}>
+            <SceneImage url={msg.sceneImageUrl} alt="Scene" pending={msg.sceneImagePending} />
           </div>
-        </div>
-        <div className="narrative-text text-sm">{formattedContent}</div>
+        )}
       </div>
-
-      {/* ── 씬 이미지: 카드 하단에 배치 ── */}
-      {msg.sceneImageUrl && (
-        <div style={{ borderTop: '1px solid rgba(31,22,44,0.6)', overflow: 'hidden' }}>
-          <SceneImage url={msg.sceneImageUrl} alt="Scene" />
-        </div>
-      )}
     </div>
   )
 }

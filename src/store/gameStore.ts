@@ -482,24 +482,58 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const processEvent = (data: Record<string, unknown>) => {
         if (data.type === 'chunk') {
           set(state => ({ streamingContent: state.streamingContent + (data.content as string) }))
+        } else if (data.type === 'image') {
+          // Async scene image arrived after 'done'
+          const { sceneImageUrl: imageUrl, sceneTag: tag } = data as { sceneImageUrl: string | null; sceneTag: string }
+          if (imageUrl) {
+            set(state => {
+              const updatedCache = tag ? { ...state.sceneImageCache, [tag]: imageUrl } : state.sceneImageCache
+              const updatedMsgs = state.messages.map(m =>
+                m.sceneImagePending ? { ...m, sceneImageUrl: imageUrl, sceneImagePending: false } : m
+              )
+              const updatedScene = state.currentScene ? { ...state.currentScene, imageUrl } : state.currentScene
+              return { messages: updatedMsgs, sceneImageCache: updatedCache, currentScene: updatedScene }
+            })
+          } else {
+            // Image generation failed — just clear pending flag
+            set(state => ({
+              messages: state.messages.map(m =>
+                m.sceneImagePending ? { ...m, sceneImagePending: false } : m
+              ),
+            }))
+          }
+        } else if (data.type === 'portrait') {
+          // Async NPC portrait arrived after 'done'
+          const { npcId, emotion, portraitUrl } = data as { npcId: string; emotion: string; portraitUrl: string }
+          set(state => {
+            const cacheKey = `${npcId}_${emotion}`
+            return {
+              npcPortraitCache: { ...state.npcPortraitCache, [cacheKey]: portraitUrl },
+              npcs: state.npcs.map(n => n.id === npcId ? { ...n, portraitUrl } : n),
+            }
+          })
         } else if (data.type === 'done') {
           const {
-            narration, summary, sceneImageUrl, sceneTag,
+            narration, summary, sceneImageUrl, sceneImagePending: imagePending, sceneTag,
             currentLocation: newLoc, npcSpeaking, gameOver, newNpc, suggestedActions,
           } = data as {
             narration: string
             summary: string
             sceneImageUrl: string | null
+            sceneImagePending: boolean
             sceneTag: string
             currentLocation: string
-            npcSpeaking: { id: string; name: string; title: string; emotion: string; portraitUrl: string } | null
+            npcSpeaking: { id: string; name: string; title: string; emotion: string; portraitUrl: string | null } | null
             gameOver: boolean
             newNpc: NPC | null
             suggestedActions: string[]
           }
 
-          const resolvedSceneUrl: string | undefined =
-            sceneImageUrl ?? get().currentScene?.imageUrl ?? undefined
+          // null + imagePending → image is coming async, don't fallback
+          // null + !imagePending → reuse previous scene
+          const resolvedSceneUrl: string | undefined = imagePending
+            ? undefined
+            : (sceneImageUrl ?? get().currentScene?.imageUrl ?? undefined)
 
           const updatedSceneCache = { ...sceneImageCache }
           if (sceneImageUrl && sceneTag) updatedSceneCache[sceneTag] = sceneImageUrl
@@ -519,6 +553,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             npcEmotion: npcSpeaking?.emotion,
             timestamp: Date.now(),
             sceneImageUrl: resolvedSceneUrl,
+            sceneImagePending: imagePending || undefined,
             suggestedActions: suggestedActions?.length ? suggestedActions : undefined,
           }
 
