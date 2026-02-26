@@ -1,4 +1,5 @@
 import { fal } from '@fal-ai/client'
+import type { VisualDirection, NPC } from '../../src/types/game'
 
 // Configure fal.ai if key is available
 if (process.env.FAL_KEY) {
@@ -192,35 +193,88 @@ export async function generateNpcEmotion(
   }
 }
 
-export async function generateSceneImage(sceneDescription: string): Promise<string> {
-  const falKey = process.env.FAL_KEY;
-  if (!falKey) {
-    return placeholderDataUrl('scene', sceneDescription.slice(0, 40));
-  }
+// ── Camera shot → composition prompt mapping ──────────────────
+const SHOT_COMPOSITION: Record<NonNullable<VisualDirection['camera_shot']>, string> = {
+  'close-up':  'extreme close-up shot, face and expression details, shallow depth of field, blurred bokeh background',
+  'bust-up':   'bust-up portrait shot, focused on upper body and face, slight depth of field',
+  'waist-up':  'waist-up shot, character interaction visible, medium shot, detailed torso and face',
+  'full-body': 'full body shot, dynamic standing pose, cinematic character showcase',
+  'wide':      'wide angle establishing shot, breathtaking environment, character small in frame',
+}
+
+// ── Focus type → additional tags ─────────────────────────────
+const FOCUS_TAGS: Record<NonNullable<VisualDirection['focus']>, string> = {
+  'character':    'character-centric composition, expressive emotions',
+  'environment':  'environmental storytelling, atmospheric depth',
+  'intimate':     'intimate proximity, emotional tension, warm soft focus',
+  'object':       'object in focus, macro detail, story-telling prop',
+}
+
+export async function generateEnhancedSceneImage(
+  sceneDescription: string,
+  direction?: VisualDirection | null,
+  activeNpcs?: NPC[]
+): Promise<string> {
+  const falKey = process.env.FAL_KEY
+  if (!falKey) return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
 
   try {
-    fal.config({ credentials: falKey });
+    fal.config({ credentials: falKey })
 
-    // 상황에 맞는 구도 힌트 추출
-    const compositionHint = determineComposition(sceneDescription);
-    
-    // 최종 프롬프트 조합: 고수위 애니메이션 스타일 + 구도 + 상세 설명
-    const prompt = `${SDXL_PREFIX} ${compositionHint}, ${sceneDescription}, highly detailed emotional expressions, intricate clothing textures, atmospheric lighting, depth of field, (visual novel cg style)`;
+    // ── NPC 외모를 프롬프트에 반영해 시각적 일관성 유지 ──
+    const npcAppearance = activeNpcs && activeNpcs.length > 0
+      ? activeNpcs.map(n => n.appearance).filter(Boolean).join(', ')
+      : ''
+
+    // ── visual_direction 지시값 → 프롬프트 구성 요소 결정 ──
+    const composition = direction?.camera_shot
+      ? SHOT_COMPOSITION[direction.camera_shot]
+      : determineComposition(sceneDescription)   // 폴백: 기존 자동 감지
+
+    const focusTags = direction?.focus ? FOCUS_TAGS[direction.focus] : 'character-centric composition'
+    const lightingTag = direction?.lighting ?? 'cinematic atmospheric lighting'
+
+    // ── 중요도에 따른 품질 차별화 ──
+    const isHighIntensity = direction?.intensity === 'climax' || direction?.intensity === 'dramatic'
+    const inferenceSteps = isHighIntensity ? 40 : 28
+    const intensityTag = isHighIntensity
+      ? '(illustrious event CG), (highly detailed emotional climax), intricate details'
+      : '(visual novel cg style), detailed'
+
+    // ── 최종 프롬프트 조합 ──
+    const promptParts = [
+      SDXL_PREFIX,
+      composition,
+      focusTags,
+      lightingTag,
+      npcAppearance,
+      sceneDescription,
+      intensityTag,
+    ].filter(Boolean)
+
+    const prompt = promptParts.join(', ')
+
+    console.log(`[Image] Enhanced scene | intensity=${direction?.intensity ?? 'auto'} steps=${inferenceSteps} shot=${direction?.camera_shot ?? 'auto'}`)
 
     const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
         prompt,
         negative_prompt: SDXL_NEGATIVE,
         image_size: 'landscape_16_9',
-        num_inference_steps: 30, // 퀄리티를 위해 스텝 수 소폭 상향
-        enable_safety_checker: false, // 성인용 묘사 허용
-        guidance_scale: 7.5,
+        num_inference_steps: inferenceSteps,
+        guidance_scale: isHighIntensity ? 8.0 : 7.5,
+        enable_safety_checker: false,
       },
-    }) as unknown as { data: { images: Array<{ url: string }> } };
+    }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.data?.images?.[0]?.url ?? placeholderDataUrl('scene', sceneDescription.slice(0, 40));
+    return result.data?.images?.[0]?.url ?? placeholderDataUrl('scene', sceneDescription.slice(0, 40))
   } catch (err) {
-    console.error('[Image] Scene generation failed:', err);
-    return placeholderDataUrl('scene', sceneDescription.slice(0, 40));
+    console.error('[Image] Enhanced scene generation failed:', err)
+    return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
   }
+}
+
+// ── Backward-compat alias (deprecated) ───────────────────────
+export async function generateSceneImage(sceneDescription: string): Promise<string> {
+  return generateEnhancedSceneImage(sceneDescription, null, [])
 }

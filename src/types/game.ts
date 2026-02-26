@@ -115,6 +115,17 @@ export interface PlayerCharacter {
   background: string
   backstory: string
   stats: CharacterStats
+  skills?: string[]
+  inventory?: InventoryItem[]
+}
+
+// ---------- Inventory ----------
+export interface InventoryItem {
+  id: string
+  name: string
+  description: string
+  quantity: number
+  type: 'weapon' | 'armor' | 'potion' | 'quest' | 'misc'
 }
 
 // ---------- Background Options ----------
@@ -214,6 +225,13 @@ export interface StatChanges {
 }
 
 // ---------- Claude Internal Response ----------
+export interface VisualDirection {
+  focus: 'character' | 'environment' | 'intimate' | 'object'
+  camera_shot: 'close-up' | 'bust-up' | 'waist-up' | 'full-body' | 'wide'
+  lighting: string
+  intensity: 'routine' | 'dramatic' | 'climax'
+}
+
 export interface ClaudeGameResponse {
   narration: string
   summary: string            // 1-2 sentence compact summary for history compression
@@ -226,8 +244,9 @@ export interface ClaudeGameResponse {
   available_npcs: string[]
   game_over: boolean
   new_npc?: NPC  // Dynamically created NPC (when Claude introduces a new character)
-  suggested_actions: string[]  // 3 context-aware action suggestions for the player
+  suggested_actions: string[]  // 4 context-aware action suggestions for the player
   stat_changes: StatChanges    // Gameplay stat changes for this turn
+  visual_direction?: VisualDirection  // Director-level shot composition instructions
   quest_updates?: Array<{      // Optional: quest status changes or new quests
     id: string                 // existing quest id, or "new" for a new quest
     title?: string

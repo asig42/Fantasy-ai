@@ -221,7 +221,11 @@ router.post('/session/create', async (req: Request, res: Response) => {
 
   try {
     const initialResponse = await claude.generateInitialScene(worldData, narrative, character)
-    const sceneImageUrl = await imageService.generateSceneImage(initialResponse.scene_description)
+    const sceneImageUrl = await imageService.generateEnhancedSceneImage(
+      initialResponse.scene_description,
+      initialResponse.visual_direction ?? null,
+      []  // 초기 장면엔 아직 NPC 없음
+    )
 
     res.json({
       initialNarration: initialResponse.narration,
@@ -348,8 +352,17 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     const pendingTasks: Promise<void>[] = []
 
     if (sceneImagePending) {
+      // 현재 장면에 있는 NPC 객체를 찾아 외모 데이터를 이미지 프롬프트에 포함
+      const sceneNpcs = (response.available_npcs ?? [])
+        .map((id: string) => allNpcs.find(n => n.id === id))
+        .filter((n): n is NPC => !!n)
+
       pendingTasks.push(
-        imageService.generateSceneImage(response.scene_description)
+        imageService.generateEnhancedSceneImage(
+          response.scene_description,
+          response.visual_direction ?? null,
+          sceneNpcs
+        )
           .then(url => { sendEvent({ type: 'image', sceneImageUrl: url, sceneTag }) })
           .catch(err => {
             console.error('[Image] Generation failed:', err)
@@ -423,8 +436,18 @@ router.post('/game/action', async (req: Request, res: Response) => {
       sceneImageUrl = sceneTagCache[sceneTag]
       console.log(`[Image] Reuse scene (tag cache hit): ${sceneTag}`)
     } else {
-      // Level 3: Generate new image
-      sceneImageUrl = await imageService.generateSceneImage(response.scene_description)
+      // Level 3: Generate new image with enhanced function
+      const allNpcsForImage = [...(npcs ?? [])]
+      if (response.new_npc) allNpcsForImage.push(response.new_npc)
+      const sceneNpcs = (response.available_npcs ?? [])
+        .map((id: string) => allNpcsForImage.find(n => n.id === id))
+        .filter((n): n is NPC => !!n)
+
+      sceneImageUrl = await imageService.generateEnhancedSceneImage(
+        response.scene_description,
+        response.visual_direction ?? null,
+        sceneNpcs
+      )
       console.log(`[Image] Generated new scene: ${sceneTag}`)
     }
 
