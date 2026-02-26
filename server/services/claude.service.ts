@@ -323,6 +323,8 @@ const GM_JSON_FORMAT = `{
   "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
   "reuse_scene_image": false,
   "current_location": "현재 위치명",
+  "time_of_day": "dawn|morning|afternoon|dusk|night|midnight",
+  "weather": "현재 날씨 (한국어: 맑음|흐림|비|폭풍|안개|눈|뇌우|사막열풍 중 택1)",
   "npc_speaking": "현재 대화 중인 NPC의 id (없으면 null)",
   "npc_emotion": "NPC 감정 상태 neutral/happy/angry/sad/surprised/serious/smug 중 하나 (없으면 null)",
   "available_npcs": ["현재 장면에 있는 NPC id 배열"],
@@ -340,13 +342,15 @@ const GM_JSON_FORMAT = `{
     "gold_change": 0,
     "experience_gain": 0
   },
-  "quest_updates": null
+  "quest_updates": null,
+  "inventory_changes": null,
+  "status_effect_changes": null,
   "visual_direction": {
     "focus": "character / environment / intimate / object",
     "camera_shot": "close-up / bust-up / waist-up / full-body / wide",
     "lighting": "cinematic / moody / bright / sunset / moonlight / candlelight",
-    "intensity": "routine / dramatic / climax" 
-  },
+    "intensity": "routine / dramatic / climax"
+  }
 }`
 
 // suggested_actions 규칙: 항상 "제목||설명" 형식 (|| 구분자 필수). 제목 10자, 설명 30자 이내. 4가지 제시.
@@ -359,10 +363,29 @@ const GM_JSON_FORMAT = `{
 // - focus: 장소 이동/탐험 시 "environment", 전투/감정 폭발 시 "character", 은밀한 대화 시 "intimate"
 // - intensity: 일상/대화="routine", 긴장/갈등="dramatic", 절정/전투클라이맥스="climax"
 
+// time_of_day/weather 규칙: 매 턴 반드시 채워야 함. 세계의 시간 흐름을 자연스럽게 유지.
+// - 연속 행동이라도 시간은 조금씩 흐름 (예: 몇 번의 대화 후 아침→낮)
+// - 날씨는 세계 분위기와 스토리에 맞게 설정. 급격한 변화는 서사적 이유 있을 때만.
+// - scene_description에도 time_of_day와 weather를 반드시 반영하세요 (이미지에 중요)
+
 // quest_updates 사용 규칙: 퀘스트 변화가 있을 때만 배열로 채움
 // 예: [{"id":"q1","status":"completed"}, {"id":"new","title":"새 퀘스트","description":"...","status":"active","objectives":["목표1"]}]
 // - 기존 퀘스트 완료/실패: id + status만 설정
 // - 새 퀘스트 추가: id="new", title/description/objectives 필수
+// - 변화 없으면 null
+
+// inventory_changes 사용 규칙: 아이템 획득/소비/분실이 있을 때만 배열로 채움
+// 예: [{"action":"add","name":"치유 포션","description":"HP를 30 회복하는 붉은 물약","quantity":2,"type":"potion"}]
+// - action: "add"(획득/줍기) 또는 "remove"(소비/잃음/판매)
+// - type: weapon(무기), armor(방어구), potion(소모품), quest(퀘스트 아이템), misc(기타)
+// - 자연스러운 상황에서만: 적 처치 후 드롭, 상점 구매/판매, 보상, 함정/사고로 분실 등
+// - 변화 없으면 null
+
+// status_effect_changes 사용 규칙: 상태이상/버프/디버프 변화가 있을 때만 배열로 채움
+// 예: [{"action":"add","id":"poison_1","name":"독에 걸림","description":"매 턴 HP -5","type":"debuff","icon":"☠"}]
+// - type: buff(유익한 효과), debuff(해로운 효과), neutral(중립적 상태)
+// - 자연스러운 상황에서만: 독 공격, 마법 축복, 저주, 변신, 잠복 등
+// - 제거할 때: action="remove" + 기존 id 사용
 // - 변화 없으면 null
 
 const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
@@ -521,6 +544,8 @@ ${narrative.slice(0, 500)}...
 이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${s.level} (${levelDesc})
 HP: ${s.hp}/${s.maxHp} (${hpStatus}) | 마나: ${s.mana}/${s.maxMana} (${manaStatus}) | 골드: ${s.gold}G | 경험치: ${s.experience}/${s.level * 100}
 배경: ${character.backstory.slice(0, 100)}
+${character.inventory && character.inventory.length > 0 ? `인벤토리: ${character.inventory.map(i => `${i.name}×${i.quantity}`).join(', ')}` : '인벤토리: 없음'}
+${character.statusEffects && character.statusEffects.length > 0 ? `활성 상태이상: ${character.statusEffects.map(e => `${e.icon}${e.name}`).join(', ')}` : ''}
 
 ## 스탯에 따른 서술 지침
 레벨별 묘사:

@@ -227,7 +227,9 @@ router.post('/session/create', async (req: Request, res: Response) => {
       initialResponse.scene_description,
       initialResponse.visual_direction ?? null,
       [],  // 초기 장면엔 아직 NPC 없음
-      heroApp
+      heroApp,
+      initialResponse.current_location,
+      initialResponse.weather
     )
 
     res.json({
@@ -249,7 +251,7 @@ router.post('/session/create', async (req: Request, res: Response) => {
 // ================================================================
 router.post('/game/action/stream', async (req: Request, res: Response) => {
   const {
-    worldData, npcs, narrative, character, history, input, currentLocation,
+    worldData, npcs, narrative, character, history, input, currentLocation, currentWeather,
     sceneTagCache, npcPortraitCache,
   } = req.body as {
     worldData: WorldData
@@ -259,6 +261,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     history: GameMessage[]
     input: string
     currentLocation: string
+    currentWeather?: string
     sceneTagCache?: Record<string, string>
     npcPortraitCache?: Record<string, string>
   }
@@ -343,12 +346,17 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
       sceneImagePending,
       sceneTag,
       currentLocation: response.current_location,
+      timeOfDay: response.time_of_day ?? null,
+      weather: response.weather ?? null,
       npcSpeaking: npcData,
       availableNpcs: response.available_npcs,
       gameOver: response.game_over,
       newNpc: response.new_npc ?? null,
       suggestedActions: response.suggested_actions ?? [],
       statChanges: response.stat_changes ?? null,
+      questUpdates: response.quest_updates ?? null,
+      inventoryChanges: response.inventory_changes ?? null,
+      statusEffectChanges: response.status_effect_changes ?? null,
     })
 
     // ── Generate images async, send events when ready ──────────
@@ -366,7 +374,9 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
           response.scene_description,
           response.visual_direction ?? null,
           sceneNpcs,
-          heroApp
+          heroApp,
+          response.current_location ?? currentLocation,
+          response.weather ?? currentWeather
         )
           .then(url => { sendEvent({ type: 'image', sceneImageUrl: url, sceneTag }) })
           .catch(err => {
@@ -399,7 +409,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
 // ================================================================
 router.post('/game/action', async (req: Request, res: Response) => {
   const {
-    worldData, npcs, narrative, character, history, input, currentLocation,
+    worldData, npcs, narrative, character, history, input, currentLocation, currentWeather,
     sceneTagCache, npcPortraitCache,
   } = req.body as {
     worldData: WorldData
@@ -409,6 +419,7 @@ router.post('/game/action', async (req: Request, res: Response) => {
     history: GameMessage[]
     input: string
     currentLocation: string
+    currentWeather?: string
     sceneTagCache?: Record<string, string>   // scene_tag → imageUrl
     npcPortraitCache?: Record<string, string> // "{npcId}_{emotion}" → portraitUrl
   }
@@ -453,7 +464,9 @@ router.post('/game/action', async (req: Request, res: Response) => {
         response.scene_description,
         response.visual_direction ?? null,
         sceneNpcs,
-        heroApp
+        heroApp,
+        response.current_location ?? currentLocation,
+        response.weather ?? currentWeather
       )
       console.log(`[Image] Generated new scene: ${sceneTag}`)
     }

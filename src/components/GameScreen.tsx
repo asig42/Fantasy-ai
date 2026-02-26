@@ -202,9 +202,17 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
   )
 }
 
+// ── Time/weather icons ────────────────────────────────
+const TIME_ICON: Record<string, string> = {
+  dawn: '🌅', morning: '☀️', afternoon: '🌤', dusk: '🌇', night: '🌙', midnight: '⭐',
+}
+const WEATHER_ICON: Record<string, string> = {
+  '맑음': '☀', '흐림': '☁', '비': '🌧', '폭풍': '⛈', '안개': '🌫', '눈': '❄', '뇌우': '⚡', '사막열풍': '🌪',
+}
+
 // ── Stats Bar ─────────────────────────────────────────
 function StatsBar() {
-  const { character, currentLocation, world } = useGameStore()
+  const { character, currentLocation, world, timeOfDay, weather } = useGameStore()
   const prevStats = useRef(character?.stats)
   const [flash, setFlash] = useState<{ hp?: boolean; mana?: boolean; gold?: boolean; xp?: boolean }>({})
 
@@ -237,7 +245,7 @@ function StatsBar() {
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 text-xs"
       style={{ background: 'rgba(5,5,10,0.95)' }}>
 
-      {/* ── 데스크톱: 세계명 ▸ 위치만 표시 (스탯은 좌측 사이드바에 있음) ── */}
+      {/* ── 데스크톱: 세계명 ▸ 위치 + 시간/날씨 표시 ── */}
       <div className="hidden lg:flex items-center gap-2 py-2 min-w-0 flex-1 truncate"
         style={{ color: 'rgba(160,144,112,0.5)' }}>
         {world?.name && (
@@ -250,6 +258,13 @@ function StatsBar() {
         )}
         {currentLocation && (
           <span className="truncate" style={{ color: 'rgba(232,213,176,0.65)', fontSize: '11px' }}>{currentLocation}</span>
+        )}
+        {(timeOfDay || weather) && (
+          <span className="flex-shrink-0 flex items-center gap-1 ml-1"
+            style={{ fontSize: '11px', color: 'rgba(160,144,112,0.5)' }}>
+            {timeOfDay && <span title={timeOfDay}>{TIME_ICON[timeOfDay] ?? '🕐'}</span>}
+            {weather && <span title={weather}>{WEATHER_ICON[weather] ?? '🌤'} {weather}</span>}
+          </span>
         )}
       </div>
 
@@ -292,10 +307,18 @@ function StatsBar() {
           <span>💰</span>
           <span style={{ color: 'rgba(232,213,176,0.6)' }}>{s.gold}G</span>
         </div>
-        <div className="w-full sm:w-auto sm:ml-auto sm:text-right truncate"
-          style={{ color: 'rgba(232,213,176,0.7)' }}>
-          <span style={{ color: 'rgba(160,144,112,0.5)' }}>📍 </span>
-          <span>{currentLocation}</span>
+        <div className="flex items-center gap-2 sm:ml-auto flex-wrap">
+          <span className="truncate" style={{ color: 'rgba(232,213,176,0.7)' }}>
+            <span style={{ color: 'rgba(160,144,112,0.5)' }}>📍 </span>
+            {currentLocation}
+          </span>
+          {(timeOfDay || weather) && (
+            <span className="flex items-center gap-1 flex-shrink-0"
+              style={{ fontSize: '11px', color: 'rgba(160,144,112,0.55)' }}>
+              {timeOfDay && <span>{TIME_ICON[timeOfDay] ?? '🕐'}</span>}
+              {weather && <span>{WEATHER_ICON[weather] ?? ''} {weather}</span>}
+            </span>
+          )}
         </div>
       </div>
     </div>

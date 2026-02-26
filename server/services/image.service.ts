@@ -213,11 +213,43 @@ const FOCUS_TAGS: Record<NonNullable<VisualDirection['focus']>, string> = {
   'object':       'object in focus, macro detail, story-telling prop',
 }
 
+// ── Location keyword → environment tags ───────────────────────
+const LOCATION_TAGS: Record<string, string> = {
+  'tavern':    'warm tavern interior, wooden beams, stone fireplace, barrels, ale mugs',
+  'inn':       'cozy inn interior, warm candlelight, wooden furniture, hearth fire',
+  'forest':    'ancient dense forest, towering trees, mossy ground, dappled light through canopy',
+  'dungeon':   'dark stone dungeon, dripping walls, iron bars, flickering torchlight',
+  'castle':    'grand medieval castle interior, stone walls, tapestries, iron chandeliers',
+  'city':      'medieval city street, cobblestone roads, half-timber buildings, market stalls',
+  'market':    'busy medieval market square, merchant stalls, crowds, wooden signs',
+  'mountain':  'rugged mountain landscape, rocky cliffs, alpine winds, distant peaks',
+  'cave':      'underground cave, stalactites, glowing crystals, deep shadows',
+  'village':   'small medieval village, thatched rooftops, dirt paths, rural scenery',
+  'ruins':     'ancient stone ruins, crumbling walls, overgrown vines, mysterious atmosphere',
+  'temple':    'stone temple interior, altar, religious iconography, incense smoke',
+  'road':      'dirt road through countryside, rolling hills, distant forests',
+  'port':      'medieval harbor port, wooden docks, ships, salt sea air, nets',
+}
+
+// ── Weather → visual tags ─────────────────────────────────────
+const WEATHER_TAGS: Record<string, string> = {
+  '맑음':   'clear blue sky, bright golden sunlight, warm lighting',
+  '흐림':   'overcast cloudy sky, diffused soft lighting, grey tones',
+  '비':     'heavy rain, wet cobblestones, rain drops, dark overcast',
+  '폭풍':   'violent storm, lightning in dark clouds, dramatic stormy atmosphere',
+  '안개':   'thick misty fog, ethereal atmosphere, soft diffused light',
+  '눈':     'snow falling gently, white snowy ground, winter atmosphere',
+  '뇌우':   'thunderstorm, lightning flash, dark dramatic sky, heavy downpour',
+  '사막열풍':'swirling sand dust, harsh sunlight, heat haze, desert winds',
+}
+
 export async function generateEnhancedSceneImage(
   sceneDescription: string,
   direction?: VisualDirection | null,
   activeNpcs?: NPC[],
-  heroAppearance?: string
+  heroAppearance?: string,
+  currentLocation?: string,
+  weather?: string
 ): Promise<string> {
   const falKey = process.env.FAL_KEY
   if (!falKey) return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
@@ -232,6 +264,12 @@ export async function generateEnhancedSceneImage(
           .filter(Boolean)
           .join(', ')
       : ''
+
+    // ── 장소/날씨 태그 추출 ──
+    const locationTag = currentLocation
+      ? Object.entries(LOCATION_TAGS).find(([key]) => currentLocation.toLowerCase().includes(key))?.[1] ?? ''
+      : ''
+    const weatherTag = weather ? (WEATHER_TAGS[weather] ?? '') : ''
 
     // ── visual_direction 지시값 → 프롬프트 구성 요소 결정 ──
     const composition = direction?.camera_shot
@@ -252,6 +290,8 @@ export async function generateEnhancedSceneImage(
     const promptParts = [
       SDXL_PREFIX,
       '(medieval fantasy setting:1.3)',
+      locationTag,
+      weatherTag,
       composition,
       focusTags,
       lightingTag,
@@ -263,7 +303,7 @@ export async function generateEnhancedSceneImage(
 
     const prompt = promptParts.join(', ')
 
-    console.log(`[Image] Enhanced scene | intensity=${direction?.intensity ?? 'auto'} steps=${inferenceSteps} shot=${direction?.camera_shot ?? 'auto'}`)
+    console.log(`[Image] Enhanced scene | intensity=${direction?.intensity ?? 'auto'} steps=${inferenceSteps} loc=${currentLocation ?? '-'} weather=${weather ?? '-'}`)
 
     const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {

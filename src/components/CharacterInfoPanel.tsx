@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useGameStore } from '../store/gameStore'
-import type { Quest, NPC } from '../types/game'
+import type { Quest, NPC, InventoryItem } from '../types/game'
 
 // ── 이미지 확대 모달 ───────────────────────────────────────
 function ImageModal({ src, name, onClose }: { src: string; name: string; onClose: () => void }) {
@@ -67,6 +67,13 @@ const CLASS_EMOJI: Record<string, string> = {
   '사냥꾼': '🏹', '연금술사': '⚗', '음유시인': '🎵', '팔라딘': '🛡',
 }
 
+const ITEM_ICON: Record<InventoryItem['type'], string> = {
+  weapon: '⚔', armor: '🛡', potion: '🧪', quest: '📜', misc: '💎',
+}
+const ITEM_COLOR: Record<InventoryItem['type'], string> = {
+  weapon: '#e74c3c', armor: '#5b9cf6', potion: '#4ade80', quest: '#D4AF37', misc: 'rgba(160,144,112,0.7)',
+}
+
 const STATUS_COLOR: Record<Quest['status'], string> = {
   active:    '#D4AF37',
   completed: '#4ade80',
@@ -89,6 +96,7 @@ function PanelContent() {
   const [backstoryOpen, setBackstoryOpen] = useState(false)
   const [selectedNpc, setSelectedNpc] = useState<NPC | null>(null)
   const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null)
+  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null)
   if (!character) return null
 
   const s = character.stats
@@ -194,6 +202,111 @@ function PanelContent() {
           content={character.backstory}
           onClose={() => setBackstoryOpen(false)}
         />
+      )}
+
+      {/* ── 상태이상 ── */}
+      {character.statusEffects && character.statusEffects.length > 0 && (
+        <div className="fantasy-panel rounded-sm p-3">
+          <h3 className="font-cinzel text-xs mb-2 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
+            ✨ 상태이상
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            {character.statusEffects.map(effect => (
+              <div key={effect.id}
+                title={`${effect.name}: ${effect.description}`}
+                className="flex items-center gap-1 px-2 py-1 rounded text-xs cursor-help"
+                style={{
+                  background: effect.type === 'buff'
+                    ? 'rgba(74,222,128,0.1)'
+                    : effect.type === 'debuff'
+                    ? 'rgba(231,76,60,0.1)'
+                    : 'rgba(91,156,246,0.1)',
+                  border: `1px solid ${effect.type === 'buff' ? 'rgba(74,222,128,0.3)' : effect.type === 'debuff' ? 'rgba(231,76,60,0.3)' : 'rgba(91,156,246,0.3)'}`,
+                  color: effect.type === 'buff'
+                    ? 'rgba(74,222,128,0.9)'
+                    : effect.type === 'debuff'
+                    ? 'rgba(231,76,60,0.9)'
+                    : 'rgba(91,156,246,0.9)',
+                }}>
+                <span>{effect.icon}</span>
+                <span>{effect.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 인벤토리 ── */}
+      <div className="fantasy-panel rounded-sm p-3">
+        <h3 className="font-cinzel text-xs mb-2 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
+          🎒 인벤토리 {character.inventory && character.inventory.length > 0 && `(${character.inventory.length})`}
+        </h3>
+        {!character.inventory || character.inventory.length === 0 ? (
+          <p className="text-xs" style={{ color: 'rgba(160,144,112,0.4)' }}>아이템 없음</p>
+        ) : (
+          <div className="space-y-1">
+            {character.inventory.map(item => (
+              <button
+                key={item.id}
+                className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors"
+                style={{ cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,175,55,0.06)')}
+                onMouseLeave={e => (e.currentTarget.style.background = '')}
+                onClick={() => setSelectedItem(item)}
+              >
+                <span className="flex-shrink-0 text-sm" style={{ color: ITEM_COLOR[item.type] }}>
+                  {ITEM_ICON[item.type]}
+                </span>
+                <span className="flex-1 truncate" style={{ color: 'rgba(232,213,176,0.85)' }}>{item.name}</span>
+                {item.quantity > 1 && (
+                  <span className="flex-shrink-0 text-xs px-1 rounded"
+                    style={{ background: 'rgba(212,175,55,0.1)', color: 'rgba(212,175,55,0.6)' }}>
+                    ×{item.quantity}
+                  </span>
+                )}
+                <span style={{ fontSize: '9px', color: 'rgba(160,144,112,0.3)', flexShrink: 0 }}>▶</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 아이템 상세 모달 */}
+      {selectedItem && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.85)' }}
+          onClick={() => setSelectedItem(null)}
+        >
+          <div className="relative max-w-xs w-full mx-4" onClick={e => e.stopPropagation()}>
+            <div className="fantasy-panel rounded-sm overflow-hidden">
+              <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(212,175,55,0.15)' }}>
+                <span className="text-lg" style={{ color: ITEM_COLOR[selectedItem.type] }}>
+                  {ITEM_ICON[selectedItem.type]}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-cinzel text-xs" style={{ color: 'rgba(212,175,55,0.85)' }}>{selectedItem.name}</p>
+                  <p style={{ fontSize: '9px', color: ITEM_COLOR[selectedItem.type], opacity: 0.7 }}>{selectedItem.type}</p>
+                </div>
+                {selectedItem.quantity > 1 && (
+                  <span className="text-xs px-1.5 py-0.5 rounded flex-shrink-0"
+                    style={{ background: 'rgba(212,175,55,0.1)', color: 'rgba(212,175,55,0.6)' }}>
+                    ×{selectedItem.quantity}
+                  </span>
+                )}
+              </div>
+              <div className="px-4 py-3">
+                <p className="text-sm leading-relaxed" style={{ color: 'rgba(200,185,155,0.8)' }}>
+                  {selectedItem.description}
+                </p>
+              </div>
+            </div>
+            <button
+              className="absolute -top-3 -right-3 w-7 h-7 rounded-full flex items-center justify-center text-xs"
+              style={{ background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.4)', color: 'rgba(212,175,55,0.8)' }}
+              onClick={() => setSelectedItem(null)}>✕</button>
+          </div>
+        </div>
       )}
 
       {/* ── 활성 퀘스트 ── */}

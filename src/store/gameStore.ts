@@ -13,6 +13,9 @@ import type {
   GameSession,
   CharacterStats,
   Quest,
+  InventoryItem,
+  StatusEffect,
+  TimeOfDay,
 } from '../types/game'
 
 // ─── Class starting skills ────────────────────────────────────
@@ -156,6 +159,8 @@ interface GameStore {
   currentLocation: string
   currentScene: SceneData | null
   quests: Quest[]
+  timeOfDay: TimeOfDay | null
+  weather: string | null
 
   // Image caches for cost reduction
   sceneImageCache: Record<string, string>   // scene_tag → imageUrl
@@ -206,6 +211,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   currentLocation: '',
   currentScene: null,
   quests: [],
+  timeOfDay: null,
+  weather: null,
   sceneImageCache: {},
   npcPortraitCache: {},
   isLoading: false,
@@ -273,10 +280,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // ── Resume a saved session (localStorage → server fallback) ─
   resumeSession: (sessionId: string) => {
     const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
-    const session = sessions[sessionId]
+    const localSession = sessions[sessionId]
 
     // Not in localStorage → fetch from server (cross-device)
-    if (!session) {
+    if (!localSession) {
+      get().resumeSessionFromServer(sessionId)
+      return
+    }
+
+    // Compare timestamps: if server has a newer version, sync from server
+    // savedSessions already has server timestamps from loadServerSessions()
+    const { savedSessions } = get()
+    const serverSummary = savedSessions.find(s => s.id === sessionId)
+    if (serverSummary && serverSummary.updatedAt > localSession.updatedAt) {
+      console.log(`[Session] Server has newer save (server:${serverSummary.updatedAt} > local:${localSession.updatedAt}), syncing...`)
       get().resumeSessionFromServer(sessionId)
       return
     }
@@ -289,12 +306,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     updateUrlWithSession(sessionId)
 
     set({
-      sessionId: session.id,
-      character: session.character,
-      messages: session.messages,
-      currentLocation: session.currentLocation,
-      currentScene: session.currentScene ?? null,
-      quests: session.quests ?? [],
+      sessionId: localSession.id,
+      character: localSession.character,
+      messages: localSession.messages,
+      currentLocation: localSession.currentLocation,
+      currentScene: localSession.currentScene ?? null,
+      quests: localSession.quests ?? [],
       world,
       npcs,
       narrative,
@@ -537,7 +554,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   sendAction: async (input: string) => {
     const {
       sessionId, world, npcs, narrative, character, messages, currentLocation,
-      sceneImageCache, npcPortraitCache,
+      sceneImageCache, npcPortraitCache, weather: currentWeather,
     } = get()
     if (!world || !character) return
 
@@ -571,6 +588,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             history: messages.slice(-10),
             input,
             currentLocation,
+            currentWeather,
             sceneTagCache: sceneImageCache,
             npcPortraitCache,
           }),
@@ -629,8 +647,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         } else if (data.type === 'done') {
           const {
             narration, summary, sceneImageUrl, sceneImagePending: imagePending, sceneTag,
-            currentLocation: newLoc, npcSpeaking, gameOver, newNpc, suggestedActions, statChanges,
-            questUpdates,
+            currentLocation: newLoc, timeOfDay: newTimeOfDay, weather: newWeather,
+            npcSpeaking, gameOver, newNpc, suggestedActions, statChanges,
+            questUpdates, inventoryChanges, statusEffectChanges,
           } = data as {
             narration: string
             summary: string
@@ -638,12 +657,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
             sceneImagePending: boolean
             sceneTag: string
             currentLocation: string
+            timeOfDay: TimeOfDay | null
+            weather: string | null
             npcSpeaking: { id: string; name: string; title: string; emotion: string; portraitUrl: string | null } | null
             gameOver: boolean
             newNpc: NPC | null
             suggestedActions: string[]
             statChanges: { hp_change: number; mana_change: number; gold_change: number; experience_gain: number } | null
             questUpdates: Array<{ id: string; title?: string; description?: string; status?: string; objectives?: string[] }> | null
+            inventoryChanges: Array<{ action: 'add' | 'remove'; name: string; description: string; quantity: number; type: InventoryItem['type'] }> | null
+            statusEffectChanges: Array<{ action: 'add' | 'remove'; id: string; name: string; description: string; type: StatusEffect['type']; icon: string }> | null
           }
 
           // null + imagePending → image is coming async, don't fallback
@@ -733,14 +756,53 @@ export const useGameStore = create<GameStore>((set, get) => ({
             }
           }
 
+          // Apply inventory changes
+          if (inventoryChanges && inventoryChanges.length > 0 && updatedCharacter) {
+            let inventory = [...(updatedCharacter.inventory ?? [])]
+            for (const change of inventoryChanges) {
+              if (change.action === 'add') {
+                const existing = inventory.find(i => i.name === change.name)
+                if (existing) {
+                  inventory = inventory.map(i => i.name === change.name ? { ...i, quantity: i.quantity + change.quantity } : i)
+                } else {
+                  inventory.push({ id: `item_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: change.name, description: change.description, quantity: change.quantity, type: change.type })
+                }
+              } else {
+                inventory = inventory.map(i => i.name === change.name ? { ...i, quantity: Math.max(0, i.quantity - change.quantity) } : i)
+                  .filter(i => i.quantity > 0)
+              }
+            }
+            updatedCharacter = { ...updatedCharacter, inventory }
+          }
+
+          // Apply status effect changes
+          if (statusEffectChanges && statusEffectChanges.length > 0 && updatedCharacter) {
+            let statusEffects = [...(updatedCharacter.statusEffects ?? [])]
+            for (const change of statusEffectChanges) {
+              if (change.action === 'add') {
+                if (!statusEffects.find(e => e.id === change.id)) {
+                  statusEffects.push({ id: change.id, name: change.name, description: change.description, type: change.type, icon: change.icon })
+                }
+              } else {
+                statusEffects = statusEffects.filter(e => e.id !== change.id)
+              }
+            }
+            updatedCharacter = { ...updatedCharacter, statusEffects }
+          }
+
+          const updatedTimeOfDay = newTimeOfDay ?? get().timeOfDay
+          const updatedWeather = newWeather ?? get().weather
+
           set({
             messages: newMessages,
             currentLocation: updatedLocation,
-            currentScene: newScene,
+            currentScene: { ...newScene, timeOfDay: updatedTimeOfDay ?? undefined, weather: updatedWeather ?? undefined },
             sceneImageCache: updatedSceneCache,
             npcPortraitCache: updatedNpcCache,
             suggestedActions: suggestedActions ?? [],
             quests: updatedQuests,
+            timeOfDay: updatedTimeOfDay,
+            weather: updatedWeather,
             isProcessing: false,
             streamingContent: '',
             ...(updatedCharacter !== prevChar ? { character: updatedCharacter } : {}),
@@ -909,7 +971,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       world: null, npcs: [], narrative: '', mapImageUrl: null,
       character: null, backgroundOptions: [],
       sessionId: null, messages: [], currentLocation: '',
-      currentScene: null, quests: [], sceneImageCache: {}, npcPortraitCache: {}, error: null,
+      currentScene: null, quests: [], sceneImageCache: {}, npcPortraitCache: {},
+      timeOfDay: null, weather: null, error: null,
     })
   },
 }))

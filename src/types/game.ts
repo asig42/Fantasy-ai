@@ -117,6 +117,16 @@ export interface PlayerCharacter {
   stats: CharacterStats
   skills?: string[]
   inventory?: InventoryItem[]
+  statusEffects?: StatusEffect[]
+}
+
+// ---------- Status Effects ----------
+export interface StatusEffect {
+  id: string
+  name: string
+  description: string
+  type: 'buff' | 'debuff' | 'neutral'
+  icon: string  // emoji
 }
 
 // ---------- Inventory ----------
@@ -144,11 +154,15 @@ export interface Quest {
 }
 
 // ---------- Game Session ----------
+export type TimeOfDay = 'dawn' | 'morning' | 'afternoon' | 'dusk' | 'night' | 'midnight'
+
 export interface SceneData {
   description: string
   imageUrl?: string
   currentLocation: string
   npcsPresent: string[]
+  timeOfDay?: TimeOfDay
+  weather?: string
 }
 
 export type MessageRole = 'narrator' | 'npc' | 'player' | 'system'
@@ -239,6 +253,8 @@ export interface ClaudeGameResponse {
   scene_tag: string          // Short normalized tag e.g. "tavern_night", "forest_day" for cache lookup
   reuse_scene_image: boolean // true = scene unchanged, skip image generation
   current_location: string
+  time_of_day?: TimeOfDay    // Current time of day in the game world
+  weather?: string           // Current weather (한국어 e.g. 맑음, 비, 흐림)
   npc_speaking: string | null
   npc_emotion: string | null
   available_npcs: string[]
@@ -253,5 +269,20 @@ export interface ClaudeGameResponse {
     description?: string
     status?: 'active' | 'completed' | 'failed'
     objectives?: string[]
+  }>
+  inventory_changes?: Array<{  // Items gained or lost this turn
+    action: 'add' | 'remove'
+    name: string
+    description: string
+    quantity: number
+    type: 'weapon' | 'armor' | 'potion' | 'quest' | 'misc'
+  }>
+  status_effect_changes?: Array<{  // Buffs/debuffs applied or removed
+    action: 'add' | 'remove'
+    id: string
+    name: string
+    description: string
+    type: 'buff' | 'debuff' | 'neutral'
+    icon: string  // emoji
   }>
 }
