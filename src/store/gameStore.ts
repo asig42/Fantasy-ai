@@ -247,12 +247,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  // ── Resume a saved session from localStorage ─────────────
+  // ── Resume a saved session (localStorage → server fallback) ─
   resumeSession: (sessionId: string) => {
     const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
     const session = sessions[sessionId]
+
+    // Not in localStorage → fetch from server (cross-device)
     if (!session) {
-      set({ error: '저장된 게임을 찾을 수 없습니다.' })
+      get().resumeSessionFromServer(sessionId)
       return
     }
 
