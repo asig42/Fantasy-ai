@@ -306,10 +306,8 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
 
     if (response.reuse_scene_image) {
       sceneImageUrl = null                              // client keeps previous
-    } else if (sceneTag && sceneTagCache?.[sceneTag]) {
-      sceneImageUrl = sceneTagCache[sceneTag]           // cache hit
     } else {
-      sceneImagePending = true                          // will generate async
+      sceneImagePending = true                          // always generate fresh image
     }
 
     // ── Resolve NPC portrait from cache ────────────────────────
@@ -444,15 +442,11 @@ router.post('/game/action', async (req: Request, res: Response) => {
     const sceneTag = response.scene_tag ?? ''
 
     if (response.reuse_scene_image) {
-      // Level 1: Claude says scene unchanged → skip entirely (client keeps previous)
+      // Claude says scene unchanged → skip (client keeps previous)
       sceneImageUrl = null
       console.log(`[Image] Reuse scene (unchanged): ${sceneTag}`)
-    } else if (sceneTag && sceneTagCache?.[sceneTag]) {
-      // Level 2: Same tag seen before → return cached URL
-      sceneImageUrl = sceneTagCache[sceneTag]
-      console.log(`[Image] Reuse scene (tag cache hit): ${sceneTag}`)
     } else {
-      // Level 3: Generate new image with enhanced function
+      // Always generate fresh image when scene changes
       const allNpcsForImage = [...(npcs ?? [])]
       if (response.new_npc) allNpcsForImage.push(response.new_npc)
       const sceneNpcs = (response.available_npcs ?? [])

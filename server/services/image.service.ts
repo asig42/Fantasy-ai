@@ -207,40 +207,78 @@ const SHOT_COMPOSITION: Record<NonNullable<VisualDirection['camera_shot']>, stri
 
 // ── Focus type → additional tags ─────────────────────────────
 const FOCUS_TAGS: Record<NonNullable<VisualDirection['focus']>, string> = {
-  'character':    'character-centric composition, expressive emotions',
-  'environment':  'environmental storytelling, atmospheric depth',
-  'intimate':     'intimate proximity, emotional tension, warm soft focus',
-  'object':       'object in focus, macro detail, story-telling prop',
+  'character':    'character-centric composition, expressive emotions, detailed character design',
+  'environment':  'environmental storytelling, rich background detail, atmospheric depth, establishing shot',
+  'intimate':     'intimate proximity, emotional tension, warm soft bokeh focus',
+  'object':       'object in focus, macro detail, story-telling prop, dramatic lighting on object',
 }
 
-// ── Location keyword → environment tags ───────────────────────
+// ── Korean location → English environment tags ────────────────
+// currentLocation은 한국어 (예: "어두운 주점", "왕궁 내부") → 영어 환경 태그로 매핑
+const KOREAN_LOCATION_MAP: Array<[string, string]> = [
+  // 실내 건물
+  ['주점', 'tavern'], ['선술집', 'tavern'], ['술집', 'tavern'],
+  ['여관', 'inn'],    ['숙소', 'inn'],      ['숙박', 'inn'],
+  ['성', 'castle'],   ['왕궁', 'castle'],   ['궁전', 'castle'],  ['요새', 'castle'],
+  ['던전', 'dungeon'],['지하', 'dungeon'],  ['감옥', 'dungeon'], ['지하실', 'dungeon'],
+  ['사원', 'temple'], ['신전', 'temple'],   ['교회', 'temple'],  ['성당', 'temple'],
+  ['시장', 'market'], ['상점', 'market'],   ['상가', 'market'],  ['가게', 'market'],
+  ['도시', 'city'],   ['도심', 'city'],     ['수도', 'city'],
+  ['마을', 'village'],['촌', 'village'],    ['마을 광장', 'village'],
+  ['항구', 'port'],   ['부두', 'port'],     ['선착장', 'port'],
+  ['학원', 'castle'], ['훈련장', 'castle'], ['병영', 'castle'],
+  // 자연/실외
+  ['숲', 'forest'],   ['삼림', 'forest'],   ['나무', 'forest'],  ['수풀', 'forest'],
+  ['산', 'mountain'], ['절벽', 'mountain'], ['고원', 'mountain'],['봉우리', 'mountain'],
+  ['동굴', 'cave'],   ['동굴', 'cave'],     ['굴', 'cave'],      ['석굴', 'cave'],
+  ['폐허', 'ruins'],  ['유적', 'ruins'],    ['폐성', 'ruins'],   ['무너진', 'ruins'],
+  ['길', 'road'],     ['도로', 'road'],     ['평원', 'road'],    ['들판', 'road'],
+]
+
+// ── Location keyword → detailed environment visual tags ───────
 const LOCATION_TAGS: Record<string, string> = {
-  'tavern':    'warm tavern interior, wooden beams, stone fireplace, barrels, ale mugs',
-  'inn':       'cozy inn interior, warm candlelight, wooden furniture, hearth fire',
-  'forest':    'ancient dense forest, towering trees, mossy ground, dappled light through canopy',
-  'dungeon':   'dark stone dungeon, dripping walls, iron bars, flickering torchlight',
-  'castle':    'grand medieval castle interior, stone walls, tapestries, iron chandeliers',
-  'city':      'medieval city street, cobblestone roads, half-timber buildings, market stalls',
-  'market':    'busy medieval market square, merchant stalls, crowds, wooden signs',
-  'mountain':  'rugged mountain landscape, rocky cliffs, alpine winds, distant peaks',
-  'cave':      'underground cave, stalactites, glowing crystals, deep shadows',
-  'village':   'small medieval village, thatched rooftops, dirt paths, rural scenery',
-  'ruins':     'ancient stone ruins, crumbling walls, overgrown vines, mysterious atmosphere',
-  'temple':    'stone temple interior, altar, religious iconography, incense smoke',
-  'road':      'dirt road through countryside, rolling hills, distant forests',
-  'port':      'medieval harbor port, wooden docks, ships, salt sea air, nets',
+  'tavern':    'warm tavern interior, wooden beams, stone fireplace, barrels and mugs, candlelit atmosphere',
+  'inn':       'cozy inn interior, warm candlelight, wooden furniture, hearth fire, intimate setting',
+  'forest':    'ancient dense forest, towering trees, mossy ground, dappled light filtering through canopy, rich foliage',
+  'dungeon':   'dark stone dungeon, dripping moisture on walls, iron bars, flickering torchlight, oppressive darkness',
+  'castle':    'grand medieval castle interior, massive stone walls, tapestries, iron chandeliers, imposing architecture',
+  'city':      'medieval city cobblestone street, half-timber buildings, city crowd, merchant district',
+  'market':    'busy medieval market square, colorful merchant stalls, crowds of people, wooden signs',
+  'mountain':  'rugged mountain landscape, rocky cliffs, alpine winds, sweeping distant peaks, dramatic sky',
+  'cave':      'underground cave system, stalactites, glowing crystals, deep mysterious shadows',
+  'village':   'small peaceful medieval village, thatched rooftops, dirt paths, rural pastoral scenery',
+  'ruins':     'ancient crumbling stone ruins, overgrown vines and moss, mysterious weathered atmosphere',
+  'temple':    'stone temple interior, altar with offerings, religious iconography, incense smoke, sacred light',
+  'road':      'dirt road through rolling countryside, distant forests, open sky, travel atmosphere',
+  'port':      'medieval harbor port, wooden docks, sailing ships, salt sea air, fishermen and nets',
 }
 
-// ── Weather → visual tags ─────────────────────────────────────
+function resolveLocationTag(currentLocation?: string): string {
+  if (!currentLocation) return ''
+  const loc = currentLocation
+
+  // 1) 한국어 키워드 매핑 (정확도 우선)
+  for (const [kor, eng] of KOREAN_LOCATION_MAP) {
+    if (loc.includes(kor)) return LOCATION_TAGS[eng] ?? ''
+  }
+  // 2) 영어 키워드 매핑 (scene_description 등에서 혼용될 경우)
+  const lower = loc.toLowerCase()
+  for (const [eng, tag] of Object.entries(LOCATION_TAGS)) {
+    if (lower.includes(eng)) return tag
+  }
+  return ''
+}
+
+// ── Weather → visual atmospheric tags ────────────────────────
 const WEATHER_TAGS: Record<string, string> = {
-  '맑음':   'clear blue sky, bright golden sunlight, warm lighting',
-  '흐림':   'overcast cloudy sky, diffused soft lighting, grey tones',
-  '비':     'heavy rain, wet cobblestones, rain drops, dark overcast',
-  '폭풍':   'violent storm, lightning in dark clouds, dramatic stormy atmosphere',
-  '안개':   'thick misty fog, ethereal atmosphere, soft diffused light',
-  '눈':     'snow falling gently, white snowy ground, winter atmosphere',
-  '뇌우':   'thunderstorm, lightning flash, dark dramatic sky, heavy downpour',
-  '사막열풍':'swirling sand dust, harsh sunlight, heat haze, desert winds',
+  '맑음':    'clear blue sky, bright warm golden sunlight, crisp visibility',
+  '흐림':    'overcast cloudy sky, diffused soft grey lighting, muted atmosphere',
+  '비':      'heavy rain falling, wet glistening cobblestones, dark overcast sky, rainy atmosphere',
+  '폭풍':    'violent storm raging, lightning in dark dramatic clouds, howling wind, intense weather',
+  '안개':    'thick ethereal fog, soft diffused light through mist, mysterious atmospheric haze',
+  '눈':      'snowflakes gently falling, white snow covering ground, winter frost atmosphere',
+  '뇌우':    'thunderstorm, dramatic lightning flash illuminating dark sky, heavy downpour',
+  '사막열풍': 'swirling sand dust storm, harsh blazing sunlight, shimmering heat haze, desert winds',
 }
 
 export async function generateEnhancedSceneImage(
@@ -257,7 +295,7 @@ export async function generateEnhancedSceneImage(
   try {
     fal.config({ credentials: falKey })
 
-    // ── NPC 나이와 외모를 프롬프트에 반영해 시각적 일관성 유지 ──
+    // ── NPC 외모 태그 ──
     const npcAppearance = activeNpcs && activeNpcs.length > 0
       ? activeNpcs
           .map(n => `${n.age ? `${n.age}yo ` : ''}${n.appearance}`)
@@ -265,45 +303,51 @@ export async function generateEnhancedSceneImage(
           .join(', ')
       : ''
 
-    // ── 장소/날씨 태그 추출 ──
-    const locationTag = currentLocation
-      ? Object.entries(LOCATION_TAGS).find(([key]) => currentLocation.toLowerCase().includes(key))?.[1] ?? ''
-      : ''
-    const weatherTag = weather ? (WEATHER_TAGS[weather] ?? '') : ''
+    // ── 장소/날씨 태그 (한국어 우선 매핑) ──
+    const locationTag = resolveLocationTag(currentLocation)
+    const weatherTag  = weather ? (WEATHER_TAGS[weather] ?? '') : ''
 
-    // ── visual_direction 지시값 → 프롬프트 구성 요소 결정 ──
+    // ── 카메라/구도 결정 ──
+    // visual_direction이 있으면 우선 사용, 없으면 씬 기반 자동 판단
     const composition = direction?.camera_shot
       ? SHOT_COMPOSITION[direction.camera_shot]
-      : determineComposition(sceneDescription)   // 폴백: 기존 자동 감지
+      : determineComposition(sceneDescription)
 
-    const focusTags = direction?.focus ? FOCUS_TAGS[direction.focus] : 'character-centric composition'
-    const lightingTag = direction?.lighting ?? 'cinematic atmospheric lighting'
+    const focusTags  = direction?.focus    ? FOCUS_TAGS[direction.focus]    : 'medium shot, protagonist visible, cinematic composition'
+    const lightingTag = direction?.lighting ? direction.lighting + ' lighting' : 'cinematic atmospheric lighting'
 
-    // ── 중요도에 따른 품질 차별화 ──
-    const isHighIntensity = direction?.intensity === 'climax' || direction?.intensity === 'dramatic'
-    const inferenceSteps = isHighIntensity ? 40 : 28
-    const intensityTag = isHighIntensity
-      ? '(illustrious event CG), (highly detailed emotional climax), intricate details'
-      : '(visual novel cg style), detailed'
+    // ── 강도별 품질/스텝 분기 ──
+    const isHighIntensity   = direction?.intensity === 'climax' || direction?.intensity === 'dramatic'
+    const inferenceSteps    = isHighIntensity ? 42 : 30
+    const qualityTag        = isHighIntensity
+      ? '(masterpiece CG illustration), (highly detailed emotional scene), intricate background'
+      : '(visual novel CG style), detailed scene, quality illustration'
 
-    // ── 최종 프롬프트 조합 ──
+    // ── 프롬프트 조합 ──
+    // 중요도 순서: sceneDescription > 세계관/장소 > 날씨/조명 > 구도/포커스 > 캐릭터 > 품질
     const promptParts = [
       SDXL_PREFIX,
-      '(medieval fantasy setting:1.3)',
+      // 1순위: 이번 씬의 핵심 내용 (가중치 부여)
+      sceneDescription ? `(${sceneDescription}:1.15)` : '',
+      // 2순위: 세계관 + 장소
+      '(medieval fantasy setting:1.2)',
       locationTag,
+      // 3순위: 날씨/조명
       weatherTag,
+      lightingTag,
+      // 4순위: 구도/포커스
       composition,
       focusTags,
-      lightingTag,
-      heroAppearance,
-      npcAppearance,
-      sceneDescription,
-      intensityTag,
+      // 5순위: 캐릭터 외모
+      heroAppearance ? `protagonist: ${heroAppearance}` : '',
+      npcAppearance  ? `characters: ${npcAppearance}`   : '',
+      // 6순위: 품질 수정자
+      qualityTag,
     ].filter(Boolean)
 
     const prompt = promptParts.join(', ')
 
-    console.log(`[Image] Enhanced scene | intensity=${direction?.intensity ?? 'auto'} steps=${inferenceSteps} loc=${currentLocation ?? '-'} weather=${weather ?? '-'}`)
+    console.log(`[Image] scene="${sceneDescription.slice(0,50)}" | loc=${currentLocation ?? '-'} | weather=${weather ?? '-'} | intensity=${direction?.intensity ?? 'auto'} | shot=${direction?.camera_shot ?? 'auto'} | steps=${inferenceSteps}`)
 
     const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
@@ -311,7 +355,7 @@ export async function generateEnhancedSceneImage(
         negative_prompt: SDXL_NEGATIVE,
         image_size: 'landscape_16_9',
         num_inference_steps: inferenceSteps,
-        guidance_scale: isHighIntensity ? 8.0 : 7.5,
+        guidance_scale: isHighIntensity ? 8.5 : 7.5,
         enable_safety_checker: false,
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
