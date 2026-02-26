@@ -63,31 +63,25 @@ function placeholderDataUrl(type: 'map' | 'portrait' | 'scene', label: string): 
 
 // ---------- Main Image Generation Functions (stateless - no file I/O) ----------
 
-// 💡 일반 SDXL 모델이 비주얼 노벨/애니메이션 스타일을 더 잘 묘사하도록 수정
+// 💡 비주얼 노벨/애니메이션 스타일에 최적화
 const SDXL_PREFIX = "(masterpiece, best quality, highres:1.2), visual novel CG art style, 2d anime illustration, vibrant cinematic lighting, flat color, clear outlines, ";
 
-// 💡 실사풍(realistic)으로 빠지거나 기괴한 인체가 나오는 것을 강하게 방지
+// 💡 실사풍/기괴한 인체 방지
 const ANIMAGINE_NEGATIVE = "(worst quality, low quality, normal quality:1.4), (realistic, photorealistic, 3d, lip, nose:1.3), bad anatomy, bad hands, missing fingers, extra digit, ugly, deformed, text, error, blurry, monochrome";
 
 function determineComposition(description: string): string {
   const desc = description.toLowerCase();
 
-  // 1. 아주 가까운 감정 묘사 (키스, 유혹, 속삭임 등)
   if (desc.includes('kiss') || desc.includes('whisper') || desc.includes('intimate') || desc.includes('seductive') || desc.includes('breath')) {
     return "extreme close-up, focused on faces and expressions, intimate proximity, shallow depth of field, blurred background";
   }
-
-  // 2. 인물 간의 교감이나 대화 (포옹, 마주보기, 손잡기 등)
   if (desc.includes('hug') || desc.includes('embrace') || desc.includes('talking') || desc.includes('holding hands') || desc.includes('looking at each other')) {
     return "medium shot, upper body, two characters interacting closely, emotional tension, focus on character chemistry";
   }
-
-  // 3. 인물이 중심이 되는 일반적인 상황
   if (desc.includes('character') || desc.includes('standing') || desc.includes('sitting')) {
     return "cowboy shot, medium full shot, character-centric, detailed character features";
   }
 
-  // 4. 기본: 배경과 인물의 조화
   return "wide shot, cinematic composition, character in environment";
 }
 
@@ -202,49 +196,86 @@ export async function generateNpcEmotion(
 
 // ── Camera shot → composition prompt mapping ──────────────────
 const SHOT_COMPOSITION: Record<NonNullable<VisualDirection['camera_shot']>, string> = {
-  'close-up':  'close-up shot, detailed face, shallow depth of field, blurred background',
-  'bust-up':   'cowboy shot, upper body, detailed clothing, slight depth of field',
-  'waist-up':  'medium shot, waist up, character interaction, detailed torso',
-  'full-body': 'full body shot, standing, showing shoes and full outfit, cinematic setup',
-  'wide':      'wide establishing shot, breathtaking distant environment, characters small in frame',
+  'close-up':  'close-up shot, face and expression details, shallow depth of field, blurred bokeh background',
+  'bust-up':   'bust-up portrait shot, focused on upper body and face, slight depth of field',
+  'waist-up':  'waist-up shot, character interaction visible, medium shot, detailed torso and face',
+  'full-body': 'full body shot, dynamic standing pose, cinematic character showcase',
+  'wide':      'wide angle establishing shot, breathtaking environment, character small in frame',
 }
 
 // ── Focus type → additional tags ─────────────────────────────
 const FOCUS_TAGS: Record<NonNullable<VisualDirection['focus']>, string> = {
-  'character':    'character-centric composition, expressive emotions',
-  'environment':  'environmental storytelling, atmospheric depth',
-  'intimate':     'intimate proximity, emotional tension, warm soft focus',
-  'object':       'object in focus, macro detail, story-telling prop',
+  'character':    'character-centric composition, expressive emotions, detailed character design',
+  'environment':  'environmental storytelling, rich background detail, atmospheric depth, establishing shot',
+  'intimate':     'intimate proximity, emotional tension, warm soft bokeh focus',
+  'object':       'object in focus, macro detail, story-telling prop, dramatic lighting on object',
 }
 
-// ── Location keyword → environment tags ───────────────────────
+// ── Korean location → English environment tags ────────────────
+// currentLocation은 한국어 (예: "어두운 주점", "왕궁 내부") → 영어 환경 태그로 매핑
+const KOREAN_LOCATION_MAP: Array<[string, string]> = [
+  // 실내 건물
+  ['주점', 'tavern'], ['선술집', 'tavern'], ['술집', 'tavern'],
+  ['여관', 'inn'],    ['숙소', 'inn'],      ['숙박', 'inn'],
+  ['성', 'castle'],   ['왕궁', 'castle'],   ['궁전', 'castle'],  ['요새', 'castle'],
+  ['던전', 'dungeon'],['지하', 'dungeon'],  ['감옥', 'dungeon'], ['지하실', 'dungeon'],
+  ['사원', 'temple'], ['신전', 'temple'],   ['교회', 'temple'],  ['성당', 'temple'],
+  ['시장', 'market'], ['상점', 'market'],   ['상가', 'market'],  ['가게', 'market'],
+  ['도시', 'city'],   ['도심', 'city'],     ['수도', 'city'],
+  ['마을', 'village'],['촌', 'village'],    ['마을 광장', 'village'],
+  ['항구', 'port'],   ['부두', 'port'],     ['선착장', 'port'],
+  ['학원', 'castle'], ['훈련장', 'castle'], ['병영', 'castle'],
+  // 자연/실외
+  ['숲', 'forest'],   ['삼림', 'forest'],   ['나무', 'forest'],  ['수풀', 'forest'],
+  ['산', 'mountain'], ['절벽', 'mountain'], ['고원', 'mountain'],['봉우리', 'mountain'],
+  ['동굴', 'cave'],   ['굴', 'cave'],       ['석굴', 'cave'],
+  ['폐허', 'ruins'],  ['유적', 'ruins'],    ['폐성', 'ruins'],   ['무너진', 'ruins'],
+  ['길', 'road'],     ['도로', 'road'],     ['평원', 'road'],    ['들판', 'road'],
+]
+
+// ── Location keyword → detailed environment visual tags ───────
 const LOCATION_TAGS: Record<string, string> = {
-  'tavern':    'warm tavern interior, wooden beams, stone fireplace, barrels, ale mugs',
-  'inn':       'cozy inn interior, warm candlelight, wooden furniture, hearth fire',
-  'forest':    'ancient dense forest, towering trees, mossy ground, dappled light through canopy',
-  'dungeon':   'dark stone dungeon, dripping walls, iron bars, flickering torchlight',
-  'castle':    'grand medieval castle interior, stone walls, tapestries, iron chandeliers',
-  'city':      'medieval city street, cobblestone roads, half-timber buildings, market stalls',
-  'market':    'busy medieval market square, merchant stalls, crowds, wooden signs',
-  'mountain':  'rugged mountain landscape, rocky cliffs, alpine winds, distant peaks',
-  'cave':      'underground cave, stalactites, glowing crystals, deep shadows',
-  'village':   'small medieval village, thatched rooftops, dirt paths, rural scenery',
-  'ruins':     'ancient stone ruins, crumbling walls, overgrown vines, mysterious atmosphere',
-  'temple':    'stone temple interior, altar, religious iconography, incense smoke',
-  'road':      'dirt road through countryside, rolling hills, distant forests',
-  'port':      'medieval harbor port, wooden docks, ships, salt sea air, nets',
+  'tavern':    'warm tavern interior, wooden beams, stone fireplace, barrels and mugs, candlelit atmosphere',
+  'inn':       'cozy inn interior, warm candlelight, wooden furniture, hearth fire, intimate setting',
+  'forest':    'ancient dense forest, towering trees, mossy ground, dappled light filtering through canopy, rich foliage',
+  'dungeon':   'dark stone dungeon, dripping moisture on walls, iron bars, flickering torchlight, oppressive darkness',
+  'castle':    'grand medieval castle interior, massive stone walls, tapestries, iron chandeliers, imposing architecture',
+  'city':      'medieval city cobblestone street, half-timber buildings, city crowd, merchant district',
+  'market':    'busy medieval market square, colorful merchant stalls, crowds of people, wooden signs',
+  'mountain':  'rugged mountain landscape, rocky cliffs, alpine winds, sweeping distant peaks, dramatic sky',
+  'cave':      'underground cave system, stalactites, glowing crystals, deep mysterious shadows',
+  'village':   'small peaceful medieval village, thatched rooftops, dirt paths, rural pastoral scenery',
+  'ruins':     'ancient crumbling stone ruins, overgrown vines and moss, mysterious weathered atmosphere',
+  'temple':    'stone temple interior, altar with offerings, religious iconography, incense smoke, sacred light',
+  'road':      'dirt road through rolling countryside, distant forests, open sky, travel atmosphere',
+  'port':      'medieval harbor port, wooden docks, sailing ships, salt sea air, fishermen and nets',
 }
 
-// ── Weather → visual tags ─────────────────────────────────────
+function resolveLocationTag(currentLocation?: string): string {
+  if (!currentLocation) return ''
+
+  // 1) 한국어 키워드 매핑 (정확도 우선)
+  for (const [kor, eng] of KOREAN_LOCATION_MAP) {
+    if (currentLocation.includes(kor)) return LOCATION_TAGS[eng] ?? ''
+  }
+  // 2) 영어 키워드 매핑 (혼용될 경우 대비)
+  const lower = currentLocation.toLowerCase()
+  for (const [eng, tag] of Object.entries(LOCATION_TAGS)) {
+    if (lower.includes(eng)) return tag
+  }
+  return ''
+}
+
+// ── Weather → visual atmospheric tags ────────────────────────
 const WEATHER_TAGS: Record<string, string> = {
-  '맑음':    'clear blue sky, bright golden sunlight, warm lighting',
-  '흐림':    'overcast cloudy sky, diffused soft lighting, grey tones',
-  '비':      'heavy rain, wet cobblestones, rain drops, dark overcast',
-  '폭풍':    'violent storm, lightning in dark clouds, dramatic stormy atmosphere',
-  '안개':    'thick misty fog, ethereal atmosphere, soft diffused light',
-  '눈':      'snow falling gently, white snowy ground, winter atmosphere',
-  '뇌우':    'thunderstorm, lightning flash, dark dramatic sky, heavy downpour',
-  '사막열풍': 'swirling sand dust, harsh sunlight, heat haze, desert winds',
+  '맑음':    'clear blue sky, bright warm golden sunlight, crisp visibility',
+  '흐림':    'overcast cloudy sky, diffused soft grey lighting, muted atmosphere',
+  '비':      'heavy rain falling, wet glistening cobblestones, dark overcast sky, rainy atmosphere',
+  '폭풍':    'violent storm raging, lightning in dark dramatic clouds, howling wind, intense weather',
+  '안개':    'thick ethereal fog, soft diffused light through mist, mysterious atmospheric haze',
+  '눈':      'snowflakes gently falling, white snow covering ground, winter frost atmosphere',
+  '뇌우':    'thunderstorm, dramatic lightning flash illuminating dark sky, heavy downpour',
+  '사막열풍': 'swirling sand dust storm, harsh blazing sunlight, shimmering heat haze, desert winds',
 }
 
 export async function generateEnhancedSceneImage(
@@ -270,44 +301,42 @@ export async function generateEnhancedSceneImage(
       npcAppearance = `${personCount}, ${npcAppearance}`;
     }
 
-    // ── 장소/날씨 태그 추출 ──
-    const locationTag = currentLocation
-      ? Object.entries(LOCATION_TAGS).find(([key]) => currentLocation.toLowerCase().includes(key))?.[1] ?? ''
-      : ''
-    const weatherTag = weather ? (WEATHER_TAGS[weather] ?? '') : ''
+    // ── 장소/날씨 태그 (한국어 우선 매핑) ──
+    const locationTag = resolveLocationTag(currentLocation)
+    const weatherTag  = weather ? (WEATHER_TAGS[weather] ?? '') : ''
 
     // ── visual_direction 지시값 → 프롬프트 구성 요소 결정 ──
     const composition = direction?.camera_shot
       ? SHOT_COMPOSITION[direction.camera_shot]
       : determineComposition(sceneDescription)
 
-    const focusTags = direction?.focus ? FOCUS_TAGS[direction.focus] : 'character-centric composition'
-    const lightingTag = direction?.lighting ?? 'cinematic atmospheric lighting'
+    const focusTags   = direction?.focus    ? FOCUS_TAGS[direction.focus]    : 'medium shot, protagonist visible, cinematic composition'
+    const lightingTag = direction?.lighting ? direction.lighting + ' lighting' : 'cinematic atmospheric lighting'
 
     // ── 중요도에 따른 품질 차별화 ──
     const isHighIntensity = direction?.intensity === 'climax' || direction?.intensity === 'dramatic'
-    const inferenceSteps = isHighIntensity ? 40 : 28
-    const intensityTag = isHighIntensity
-      ? '(illustrious event CG), (highly detailed emotional climax), intricate details'
-      : '(visual novel cg style), detailed'
+    const inferenceSteps  = isHighIntensity ? 42 : 30
+    const intensityTag    = isHighIntensity
+      ? '(masterpiece CG illustration), (highly detailed emotional scene), intricate background'
+      : '(visual novel CG style), detailed scene, quality illustration'
 
-    // ── 최종 프롬프트 조합 ──
+    // ── 최종 프롬프트 조합 (중요도 순) ──
     const promptParts = [
       SDXL_PREFIX,
+      sceneDescription ? `(${sceneDescription}:1.15)` : '',
       locationTag,
       weatherTag,
+      lightingTag,
       composition,
       focusTags,
-      lightingTag,
-      heroAppearance,
-      npcAppearance,
-      sceneDescription,
+      heroAppearance ? `protagonist: ${heroAppearance}` : '',
+      npcAppearance  ? `characters: ${npcAppearance}`   : '',
       intensityTag,
     ].filter(Boolean)
 
     const prompt = promptParts.join(', ')
 
-    console.log(`[Image] Enhanced scene | intensity=${direction?.intensity ?? 'auto'} steps=${inferenceSteps} shot=${direction?.camera_shot ?? 'auto'} loc=${currentLocation ?? '-'} weather=${weather ?? '-'}`)
+    console.log(`[Image] scene="${sceneDescription.slice(0,50)}" | loc=${currentLocation ?? '-'} | weather=${weather ?? '-'} | intensity=${direction?.intensity ?? 'auto'} | shot=${direction?.camera_shot ?? 'auto'} | steps=${inferenceSteps}`)
 
     const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {

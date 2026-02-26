@@ -527,7 +527,7 @@ ${narrative.slice(0, 500)}...
 - 플레이어 행동에 논리적으로 반응하세요
 - NPC의 성격과 성향에 맞게 행동시키세요
 - 세계관의 일관성을 유지하세요 (중세 판타지 세계 - 현대/미래 기술 요소 절대 금지)
-- scene_description은 영어로 작성하고, 반드시 "medieval fantasy" 키워드 포함하세요
+- scene_description은 영어로 작성. 반드시 "medieval fantasy" 포함. 영화 한 장면처럼 인물 자세·행동, 장소 세부사항, 조명·날씨 분위기를 시각적으로 묘사 (줄거리 요약 금지, '카메라에 보이는 것' 서술)
 - 반드시 유효한 JSON만 반환하세요
 - 에테르라는 말을 쓰지 않습니다. 만약 그런 말이 나와야 할 상황이라면 '마나'로 대체해서 사용하세요.
 
@@ -543,10 +543,12 @@ ${narrative.slice(0, 500)}...
 
 ## 이미지 재사용 규칙 (비용 절감)
 - scene_tag: 장소+시간대를 나타내는 짧은 영어 슬러그 (예: "tavern_night", "forest_day", "dungeon_corridor", "city_market_day", "castle_interior", "cave_entrance"). 2-3 단어, 소문자, 언더스코어 구분.
-- reuse_scene_image: 아래 조건이 모두 해당하면 true, 하나라도 아니면 false
-  * 이전 턴과 current_location이 동일
-  * 시간대/날씨/조명이 크게 변하지 않음
-  * 장면의 전반적 분위기가 유사 (전투 시작/종료 등 극적 변화 없음)
+- reuse_scene_image: 기본값은 false. 아래 모든 조건을 100% 충족할 때만 true:
+  * 이전 턴과 current_location이 완전히 동일 (이동이나 장소 변화 전혀 없음)
+  * 시간대(time_of_day)와 날씨(weather)가 변하지 않음
+  * 장면의 주요 인물 구성 변화 없음 (NPC 새로 등장하거나 퇴장 없음)
+  * 분위기/감정 강도의 급격한 전환 없음 (평화↔전투, 일상↔위기 등)
+  ⚠️ 조금이라도 변화가 있다면 반드시 false. 새 이미지가 몰입감을 높입니다.
 
 ## 주인공 현재 상태
 이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${s.level} (${levelDesc})
