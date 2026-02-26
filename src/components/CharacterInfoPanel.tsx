@@ -17,11 +17,13 @@ const STATUS_LABEL: Record<Quest['status'], string> = {
 
 interface Props {
   onClose: () => void
+  /** 'sidebar' = inline static panel (desktop), 'overlay' = full-screen slide-out (mobile) */
+  variant?: 'overlay' | 'sidebar'
 }
 
-export default function CharacterInfoPanel({ onClose }: Props) {
+// ── 공통 패널 콘텐츠 ──────────────────────────────────────
+function PanelContent() {
   const { character, currentLocation, quests, messages, npcs } = useGameStore()
-
   if (!character) return null
 
   const s = character.stats
@@ -29,16 +31,144 @@ export default function CharacterInfoPanel({ onClose }: Props) {
   const manaPct = s.maxMana > 0 ? Math.round((s.mana / s.maxMana) * 100) : 0
   const expPct  = Math.min(100, Math.round((s.experience / (s.level * 100)) * 100))
 
-  // 대화에 등장한 NPC 목록 (중복 제거)
-  const appearedNpcIds = [...new Set(
-    messages.filter(m => m.npcId).map(m => m.npcId!)
-  )]
-  const appearedNpcs = appearedNpcIds
-    .map(id => npcs.find(n => n.id === id))
-    .filter(Boolean)
-
+  const appearedNpcIds = [...new Set(messages.filter(m => m.npcId).map(m => m.npcId!))]
+  const appearedNpcs = appearedNpcIds.map(id => npcs.find(n => n.id === id)).filter(Boolean)
   const activeQuests  = quests.filter(q => q.status === 'active')
   const doneQuests    = quests.filter(q => q.status !== 'active')
+
+  return (
+    <div className="flex flex-col gap-3 p-3">
+
+      {/* ── 캐릭터 기본 정보 ── */}
+      <div className="fantasy-panel rounded-sm p-3">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center justify-center rounded-full text-2xl flex-shrink-0"
+            style={{
+              width: '48px', height: '48px',
+              background: 'rgba(212,175,55,0.08)',
+              border: '1.5px solid rgba(212,175,55,0.3)',
+            }}>
+            {CLASS_EMOJI[character.characterClass] ?? '⚔'}
+          </div>
+          <div className="min-w-0">
+            <p className="font-cinzel text-sm font-bold truncate" style={{ color: '#D4AF37' }}>
+              {character.name}
+            </p>
+            <p className="text-xs" style={{ color: 'rgba(160,144,112,0.7)' }}>
+              Lv.{s.level} {character.characterClass}
+            </p>
+            {currentLocation && (
+              <p className="text-xs mt-0.5 truncate" style={{ color: 'rgba(160,144,112,0.5)' }}>
+                📍 {currentLocation}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <StatBar label="HP" value={s.hp} max={s.maxHp} pct={hpPct}
+            color={hpPct > 50 ? '#e74c3c' : hpPct > 25 ? '#e67e22' : '#c0392b'} />
+          {s.maxMana > 0 && (
+            <StatBar label="MP" value={s.mana} max={s.maxMana} pct={manaPct} color="#5b9cf6" />
+          )}
+          <StatBar label="EXP" value={s.experience} max={s.level * 100} pct={expPct}
+            color="rgba(212,175,55,0.6)" />
+          <div className="flex items-center justify-between text-xs mt-1"
+            style={{ color: 'rgba(160,144,112,0.6)' }}>
+            <span>💰 {s.gold}G</span>
+            <span style={{ color: 'rgba(160,144,112,0.4)' }}>
+              {character.gender} · {character.age}세
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 배경 이야기 ── */}
+      <div className="fantasy-panel rounded-sm p-3">
+        <h3 className="font-cinzel text-xs mb-1.5 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
+          📖 배경
+        </h3>
+        <p className="text-xs leading-relaxed" style={{ color: 'rgba(200,185,155,0.75)' }}>
+          {character.backstory.length > 140
+            ? character.backstory.slice(0, 140) + '...'
+            : character.backstory}
+        </p>
+      </div>
+
+      {/* ── 활성 퀘스트 ── */}
+      <div className="fantasy-panel rounded-sm p-3">
+        <h3 className="font-cinzel text-xs mb-2 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
+          ⚡ 퀘스트 {quests.length > 0 && `(${activeQuests.length}/${quests.length})`}
+        </h3>
+        {quests.length === 0 ? (
+          <p className="text-xs" style={{ color: 'rgba(160,144,112,0.4)' }}>퀘스트 생성 중...</p>
+        ) : (
+          <div className="space-y-3">
+            {activeQuests.map(q => <QuestCard key={q.id} quest={q} />)}
+            {doneQuests.length > 0 && (
+              <>
+                <div className="h-px" style={{ background: 'rgba(212,175,55,0.1)' }} />
+                {doneQuests.map(q => <QuestCard key={q.id} quest={q} />)}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── 인물 관계 ── */}
+      <div className="fantasy-panel rounded-sm p-3">
+        <h3 className="font-cinzel text-xs mb-2 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
+          👥 인물 관계
+        </h3>
+        {appearedNpcs.length === 0 ? (
+          <p className="text-xs" style={{ color: 'rgba(160,144,112,0.4)' }}>아직 만난 인물이 없습니다.</p>
+        ) : (
+          <div className="space-y-2">
+            {appearedNpcs.map(npc => npc && (
+              <div key={npc.id} className="flex items-start gap-2">
+                <div className="flex-shrink-0 w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-sm"
+                  style={{ background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)' }}>
+                  {npc.portraitUrl
+                    ? <img src={npc.portraitUrl} alt={npc.name}
+                        className="w-full h-full object-cover" style={{ objectPosition: 'top' }} />
+                    : '👤'}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold truncate" style={{ color: 'rgba(232,213,176,0.9)' }}>{npc.name}</p>
+                  <p className="text-xs truncate" style={{ color: 'rgba(160,144,112,0.6)' }}>{npc.title}</p>
+                  {npc.relationshipToPlayer && (
+                    <p className="mt-0.5" style={{ color: 'rgba(160,144,112,0.5)', fontSize: '10px' }}>
+                      {npc.relationshipToPlayer}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  )
+}
+
+export default function CharacterInfoPanel({ onClose, variant = 'overlay' }: Props) {
+  const { character } = useGameStore()
+  if (!character) return null
+
+  if (variant === 'sidebar') {
+    return (
+      <div className="h-full overflow-y-auto flex flex-col" style={{ background: '#07070c' }}>
+        <div className="px-3 py-2 sticky top-0 z-10"
+          style={{ background: '#07070c', borderBottom: '1px solid rgba(212,175,55,0.1)' }}>
+          <span className="font-cinzel text-xs tracking-widest" style={{ color: 'rgba(212,175,55,0.45)' }}>
+            CHARACTER
+          </span>
+        </div>
+        <PanelContent />
+      </div>
+    )
+  }
 
   return (
     <>
@@ -76,129 +206,7 @@ export default function CharacterInfoPanel({ onClose }: Props) {
           </button>
         </div>
 
-        <div className="flex flex-col gap-4 p-4">
-
-          {/* ── 캐릭터 기본 정보 ── */}
-          <div className="fantasy-panel rounded-sm p-4">
-            <div className="flex items-center gap-3 mb-3">
-              {/* 클래스 아이콘 */}
-              <div className="flex items-center justify-center rounded-full text-3xl flex-shrink-0"
-                style={{
-                  width: '56px', height: '56px',
-                  background: 'rgba(212,175,55,0.08)',
-                  border: '1.5px solid rgba(212,175,55,0.3)',
-                }}>
-                {CLASS_EMOJI[character.characterClass] ?? '⚔'}
-              </div>
-              <div className="min-w-0">
-                <p className="font-cinzel text-sm font-bold truncate" style={{ color: '#D4AF37' }}>
-                  {character.name}
-                </p>
-                <p className="text-xs" style={{ color: 'rgba(160,144,112,0.7)' }}>
-                  Lv.{s.level} {character.characterClass}
-                </p>
-                {currentLocation && (
-                  <p className="text-xs mt-0.5 truncate" style={{ color: 'rgba(160,144,112,0.5)' }}>
-                    📍 {currentLocation}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* 스탯 바 */}
-            <div className="space-y-1.5">
-              <StatBar label="HP" value={s.hp} max={s.maxHp} pct={hpPct}
-                color={hpPct > 50 ? '#e74c3c' : hpPct > 25 ? '#e67e22' : '#c0392b'} />
-              {s.maxMana > 0 && (
-                <StatBar label="MP" value={s.mana} max={s.maxMana} pct={manaPct} color="#5b9cf6" />
-              )}
-              <StatBar label="EXP" value={s.experience} max={s.level * 100} pct={expPct}
-                color="rgba(212,175,55,0.6)" />
-              <div className="flex items-center justify-between text-xs mt-1"
-                style={{ color: 'rgba(160,144,112,0.6)' }}>
-                <span>💰 {s.gold}G</span>
-                <span style={{ color: 'rgba(160,144,112,0.4)' }}>
-                  {character.gender} · {character.age}세
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* ── 배경 이야기 ── */}
-          <div className="fantasy-panel rounded-sm p-4">
-            <h3 className="font-cinzel text-xs mb-2 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
-              📖 배경
-            </h3>
-            <p className="text-xs leading-relaxed" style={{ color: 'rgba(200,185,155,0.75)' }}>
-              {character.backstory.length > 160
-                ? character.backstory.slice(0, 160) + '...'
-                : character.backstory}
-            </p>
-          </div>
-
-          {/* ── 활성 퀘스트 ── */}
-          <div className="fantasy-panel rounded-sm p-4">
-            <h3 className="font-cinzel text-xs mb-3 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
-              ⚡ 퀘스트 {quests.length > 0 && `(${activeQuests.length}/${quests.length})`}
-            </h3>
-
-            {quests.length === 0 ? (
-              <p className="text-xs" style={{ color: 'rgba(160,144,112,0.4)' }}>
-                퀘스트 생성 중...
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {activeQuests.map(q => <QuestCard key={q.id} quest={q} />)}
-                {doneQuests.length > 0 && (
-                  <>
-                    <div className="h-px" style={{ background: 'rgba(212,175,55,0.1)' }} />
-                    {doneQuests.map(q => <QuestCard key={q.id} quest={q} />)}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* ── 인물 관계 ── */}
-          <div className="fantasy-panel rounded-sm p-4">
-            <h3 className="font-cinzel text-xs mb-3 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
-              👥 인물 관계
-            </h3>
-            {appearedNpcs.length === 0 ? (
-              <p className="text-xs" style={{ color: 'rgba(160,144,112,0.4)' }}>
-                아직 만난 인물이 없습니다.
-              </p>
-            ) : (
-              <div className="space-y-2">
-                {appearedNpcs.map(npc => npc && (
-                  <div key={npc.id} className="flex items-start gap-2">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full overflow-hidden flex items-center justify-center text-sm"
-                      style={{ background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)' }}>
-                      {npc.portraitUrl
-                        ? <img src={npc.portraitUrl} alt={npc.name}
-                            className="w-full h-full object-cover" style={{ objectPosition: 'top' }} />
-                        : '👤'}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold truncate" style={{ color: 'rgba(232,213,176,0.9)' }}>
-                        {npc.name}
-                      </p>
-                      <p className="text-xs truncate" style={{ color: 'rgba(160,144,112,0.6)' }}>
-                        {npc.title}
-                      </p>
-                      {npc.relationshipToPlayer && (
-                        <p className="text-xs mt-0.5" style={{ color: 'rgba(160,144,112,0.5)', fontSize: '10px' }}>
-                          {npc.relationshipToPlayer}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-        </div>
+        <PanelContent />
       </div>
     </>
   )

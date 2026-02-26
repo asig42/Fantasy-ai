@@ -102,7 +102,9 @@ export async function generateNpcPortrait(
 
   try {
     fal.config({ credentials: falKey })
-    const prompt = `anime style, full body character portrait, fantasy RPG character art, ${npc.appearance}, ${npc.gender === '여성' ? 'female' : 'male'} character, ${npc.title}, standing pose, detailed fantasy outfit, clean gradient background, high quality, visual novel character art style`
+    // Appearance pinned at start for consistent reference
+    const genderWord = npc.gender === '여성' ? 'female' : 'male'
+    const prompt = `anime style, full body character portrait, fantasy RPG character art, ${genderWord}, ${npc.appearance}, ${npc.title}, standing pose, detailed fantasy outfit, consistent character design, clean gradient background, high quality, visual novel character art style`
 
     const result = await fal.subscribe('fal-ai/flux/schnell', {
       input: {
@@ -142,7 +144,9 @@ export async function generateNpcEmotion(
       smug: 'smug confident smiling expression',
     }
 
-    const prompt = `anime style, bust portrait, fantasy character, ${npc.appearance}, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, high quality, visual novel character art style, clean background`
+    // Appearance is pinned first to enforce visual consistency across emotions
+    const genderWord = npc.gender === '여성' ? 'female' : 'male'
+    const prompt = `anime style, bust portrait, fantasy character, ${genderWord}, ${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, consistent character design, high quality, visual novel character art style, clean background`
 
     const result = await fal.subscribe('fal-ai/flux/schnell', {
       input: {

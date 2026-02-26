@@ -150,6 +150,7 @@ export interface GameMessage {
   npcId?: string
   npcName?: string
   npcEmotion?: string
+  npcPortraitUrl?: string  // Immutable snapshot of portrait at message creation time
   timestamp: number
   sceneImageUrl?: string
   sceneImagePending?: boolean  // true while server is generating the image async

@@ -524,27 +524,37 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     set(state => ({ messages: [...state.messages, playerMsg] }))
 
-    try {
-      const res = await fetch('/api/game/action/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          worldData: world,
-          npcs,
-          narrative,
-          character,
-          history: messages.slice(-10),
-          input,
-          currentLocation,
-          sceneTagCache: sceneImageCache,
-          npcPortraitCache,
-        }),
-      })
+    const STREAM_TIMEOUT_MS = 120_000
+    const MAX_RETRIES = 2
 
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: '서버 오류' }))
-        throw new Error(err.error ?? '서버 오류')
-      }
+    const attemptStream = async (attempt: number): Promise<void> => {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
+
+      try {
+        const res = await fetch('/api/game/action/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            worldData: world,
+            npcs,
+            narrative,
+            character,
+            history: messages.slice(-10),
+            input,
+            currentLocation,
+            sceneTagCache: sceneImageCache,
+            npcPortraitCache,
+          }),
+        })
+
+        clearTimeout(timeoutId)
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: '서버 오류' }))
+          throw new Error(err.error ?? '서버 오류')
+        }
 
       const reader = res.body!.getReader()
       const decoder = new TextDecoder()
@@ -625,6 +635,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
             npcId: npcSpeaking?.id,
             npcName: npcSpeaking?.name,
             npcEmotion: npcSpeaking?.emotion,
+            // Snapshot portrait at creation time — prevents icon changing when NPC emotion updates later
+            npcPortraitUrl: npcSpeaking?.portraitUrl ?? undefined,
             timestamp: Date.now(),
             sceneImageUrl: resolvedSceneUrl,
             sceneImagePending: imagePending || undefined,
@@ -756,8 +768,26 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }
         }
       }
+      } catch (innerErr: unknown) {
+        clearTimeout(timeoutId)
+        const isAbort = innerErr instanceof DOMException && innerErr.name === 'AbortError'
+        const isNetwork = innerErr instanceof TypeError && innerErr.message.includes('fetch')
+        if ((isAbort || isNetwork) && attempt < MAX_RETRIES) {
+          const delay = 1500 * (attempt + 1)
+          set({ streamingContent: '', error: null })
+          await new Promise(r => setTimeout(r, delay))
+          return attemptStream(attempt + 1)
+        }
+        throw innerErr
+      }
+    }
+
+    try {
+      await attemptStream(0)
     } catch (err: unknown) {
-      set({ error: `행동 처리 실패: ${extractMessage(err)}`, isProcessing: false, streamingContent: '' })
+      const isAbort = err instanceof DOMException && err.name === 'AbortError'
+      const msg = isAbort ? '응답 시간이 초과되었습니다. 다시 시도해주세요.' : `행동 처리 실패: ${extractMessage(err)}`
+      set({ error: msg, isProcessing: false, streamingContent: '' })
     }
   },
 

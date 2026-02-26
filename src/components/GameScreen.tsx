@@ -67,15 +67,17 @@ function SceneImage({ url, alt, pending }: { url?: string; alt: string; pending?
 
 
 // ── Chat Avatar ───────────────────────────────────────
-function ChatAvatar({ npc }: { npc: NPC | null }) {
+// Uses snapshotted portraitUrl from the message — NOT global NPC state,
+// so icon never changes when NPC emotion updates in later turns.
+function ChatAvatar({ portraitUrl, hasNpc }: { portraitUrl?: string; hasNpc: boolean }) {
   const [loaded, setLoaded] = useState(false)
 
-  if (npc?.portraitUrl) {
+  if (portraitUrl) {
     return (
       <div className="relative" style={{ width: '52px', height: '52px', flexShrink: 0 }}>
         <img
-          src={npc.portraitUrl}
-          alt={npc.name}
+          src={portraitUrl}
+          alt="npc"
           className="w-full h-full rounded-full object-cover"
           style={{
             objectPosition: 'top',
@@ -102,13 +104,14 @@ function ChatAvatar({ npc }: { npc: NPC | null }) {
         background: 'rgba(15,10,25,0.9)',
         border: '1.5px solid rgba(212,175,55,0.2)',
       }}>
-      {npc ? '👤' : '📜'}
+      {hasNpc ? '👤' : '📜'}
     </div>
   )
 }
 
 // ── Message Block ─────────────────────────────────────
 function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
+  // npc reference is only used for the name/title display — NOT for portrait
   const npc = msg.npcId ? npcs.find(n => n.id === msg.npcId) : null
 
   const formattedContent = msg.content
@@ -139,7 +142,7 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
       {/* ── Left: avatar (sticky) ── */}
       <div className="flex-shrink-0 self-start flex flex-col items-center gap-1"
         style={{ position: 'sticky', top: '16px' }}>
-        <ChatAvatar npc={npc ?? null} />
+        <ChatAvatar portraitUrl={msg.npcPortraitUrl} hasNpc={!!msg.npcId} />
         <p className="font-cinzel text-center leading-tight"
           style={{
             fontSize: '10px',
@@ -314,17 +317,22 @@ export default function GameScreen() {
 
   return (
     <div className="flex flex-col h-screen" style={{ background: '#05050a' }}>
-      {showInfoPanel && <CharacterInfoPanel onClose={() => setShowInfoPanel(false)} />}
+      {/* Mobile overlay (hidden on lg+) */}
+      {showInfoPanel && (
+        <div className="lg:hidden">
+          <CharacterInfoPanel onClose={() => setShowInfoPanel(false)} variant="overlay" />
+        </div>
+      )}
 
       {/* Top bar: Stats + Menu */}
       <div style={{ background: 'rgba(5,5,10,0.95)', borderBottom: '1px solid #1a1020' }}>
-        <div className="lg:max-w-3xl lg:mx-auto flex items-stretch">
+        <div className="flex items-stretch">
         <div className="flex-1 min-w-0">
           <StatsBar />
         </div>
 
-        {/* Hamburger menu — top right */}
-        <div className="relative flex-shrink-0 flex items-center px-2" ref={menuRef}>
+        {/* Hamburger menu — mobile only (lg: hidden) */}
+        <div className="lg:hidden relative flex-shrink-0 flex items-center px-2" ref={menuRef}>
           <button
             className="px-2 py-1 rounded-sm transition-colors"
             style={{ color: 'rgba(160,144,112,0.6)', fontSize: '18px', lineHeight: 1 }}
@@ -352,15 +360,48 @@ export default function GameScreen() {
             </div>
           )}
         </div>
-        </div>{/* end lg:max-w-3xl */}
+
+        {/* Desktop menu */}
+        <div className="hidden lg:flex relative flex-shrink-0 items-center px-2" ref={menuRef}>
+          <button
+            className="px-2 py-1 rounded-sm transition-colors"
+            style={{ color: 'rgba(160,144,112,0.6)', fontSize: '18px', lineHeight: 1 }}
+            onClick={() => setShowMenu(v => !v)}
+            aria-label="메뉴">
+            ≡
+          </button>
+          {showMenu && (
+            <div className="absolute top-full right-0 mt-1 w-36 fantasy-panel rounded-sm overflow-hidden"
+              style={{ zIndex: 50 }}>
+              <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-red-900/20"
+                style={{ color: '#e74c3c' }}
+                onClick={() => {
+                  setShowMenu(false)
+                  if (confirm('게임을 초기화하시겠습니까? 모든 진행 상황이 사라집니다.')) resetGame()
+                }}>
+                🔄 처음부터
+              </button>
+            </div>
+          )}
+        </div>
+        </div>
       </div>
 
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">
 
+        {/* Desktop left sidebar — always visible on lg+ */}
+        <div className="hidden lg:block flex-shrink-0 overflow-hidden"
+          style={{
+            width: '240px',
+            borderRight: '1px solid rgba(212,175,55,0.12)',
+          }}>
+          <CharacterInfoPanel onClose={() => {}} variant="sidebar" />
+        </div>
+
         {/* Messages column */}
         <div className="flex-1 overflow-y-auto">
-        <div className="lg:max-w-3xl lg:mx-auto px-4 py-4 space-y-6">
+        <div className="px-4 py-4 space-y-6" style={{ maxWidth: '780px', margin: '0 auto' }}>
 
           {messages.map(msg => (
             <MessageBlock key={msg.id} msg={msg} npcs={npcs} />
@@ -403,13 +444,13 @@ export default function GameScreen() {
           )}
 
           <div ref={messagesEndRef} />
-        </div>{/* end lg:max-w-3xl */}
+        </div>{/* end max-w */}
         </div>{/* end overflow-y-auto */}
       </div>
 
       {/* Input area */}
       <div style={{ borderTop: '1px solid #1a1020', background: 'rgba(5,5,10,0.98)' }}>
-        <div className="lg:max-w-3xl lg:mx-auto">
+        <div style={{ maxWidth: '780px', margin: '0 auto' }}>
 
         {/* Quick actions */}
         <div className="px-3 pt-2 flex gap-2 overflow-x-auto pb-1 no-scrollbar">

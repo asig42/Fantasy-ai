@@ -379,12 +379,27 @@ function selectModel(playerInput: string, history: GameMessage[]): string {
   return 'claude-haiku-4-5-20251001'
 }
 
+// Derive consistent speaking style hint from NPC personality + alignment
+function npcToneHint(n: NPC): string {
+  const isEvil = n.alignment.includes('악')
+  const isGood = n.alignment.includes('선')
+  const persTags = n.personality.map(p => p.toLowerCase())
+
+  if (isEvil) return '냉혹·위협적. 명령조, 짧은 문장, 위압감.'
+  if (persTags.some(p => ['냉철', '냉정', '신중', '철저'].includes(p))) return '이성적·간결. 감정 절제, 논리적 말투.'
+  if (persTags.some(p => ['활발', '쾌활', '유머', '명랑'].includes(p))) return '밝고 말이 많음. 감탄사 자주 사용, 농담 포함.'
+  if (persTags.some(p => ['엄격', '권위', '위엄'].includes(p))) return '권위적·정중. 격식체, 느린 어조.'
+  if (persTags.some(p => ['신비', '은둔', '조용'].includes(p))) return '신비롭고 함축적. 짧고 의미심장한 표현.'
+  if (isGood) return '따뜻하고 친절. 부드러운 어조, 격려 포함.'
+  return '중립적·사무적.'
+}
+
 function buildSystemPrompt(
   world: WorldData, npcs: NPC[], narrative: string,
   character: PlayerCharacter, currentLocation: string
 ): string {
   const npcSummary = npcs.map(n =>
-    `- ID: ${n.id} | ${n.title} ${n.name} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment}`
+    `- ID: ${n.id} | ${n.title} ${n.name} | 외모: ${n.appearance} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment} | 말투: ${npcToneHint(n)}`
   ).join('\n')
 
   const s = character.stats
@@ -412,6 +427,12 @@ ${narrative.slice(0, 500)}...
 - 세계관의 일관성을 유지하세요
 - scene_description은 영어로 작성하세요 (이미지 생성용)
 - 반드시 유효한 JSON만 반환하세요
+
+## NPC 페르소나 일관성 규칙 (매우 중요)
+- 각 NPC는 위 목록의 **말투(Tone)** 설명을 반드시 유지하세요
+- 대화 회차가 늘어도 NPC의 말투·성격은 절대 변하지 않습니다
+- 악한 NPC가 갑자기 친절해지거나, 신비로운 NPC가 수다스러워지면 안 됩니다
+- NPC 대사를 쓸 때는 해당 NPC의 말투 특징이 드러나도록 작성하세요
 
 ## 이미지 재사용 규칙 (비용 절감)
 - scene_tag: 장소+시간대를 나타내는 짧은 영어 슬러그 (예: "tavern_night", "forest_day", "dungeon_corridor", "city_market_day", "castle_interior", "cave_entrance"). 2-3 단어, 소문자, 언더스코어 구분.
