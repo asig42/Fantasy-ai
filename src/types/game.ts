@@ -123,6 +123,15 @@ export interface BackgroundOption {
   description: string
 }
 
+// ---------- Quests ----------
+export interface Quest {
+  id: string
+  title: string
+  description: string
+  status: 'active' | 'completed' | 'failed'
+  objectives: string[]
+}
+
 // ---------- Game Session ----------
 export interface SceneData {
   description: string
@@ -153,6 +162,7 @@ export interface GameSession {
   messages: GameMessage[]
   currentLocation: string
   currentScene?: SceneData
+  quests: Quest[]
   createdAt: number
   updatedAt: number
 }
@@ -217,4 +227,11 @@ export interface ClaudeGameResponse {
   new_npc?: NPC  // Dynamically created NPC (when Claude introduces a new character)
   suggested_actions: string[]  // 3 context-aware action suggestions for the player
   stat_changes: StatChanges    // Gameplay stat changes for this turn
+  quest_updates?: Array<{      // Optional: quest status changes or new quests
+    id: string                 // existing quest id, or "new" for a new quest
+    title?: string
+    description?: string
+    status?: 'active' | 'completed' | 'failed'
+    objectives?: string[]
+  }>
 }

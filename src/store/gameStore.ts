@@ -12,6 +12,7 @@ import type {
   BackgroundOption,
   GameSession,
   CharacterStats,
+  Quest,
 } from '../types/game'
 
 // ─── Class-based initial stats ────────────────────────────────
@@ -134,6 +135,7 @@ interface GameStore {
   messages: GameMessage[]
   currentLocation: string
   currentScene: SceneData | null
+  quests: Quest[]
 
   // Image caches for cost reduction
   sceneImageCache: Record<string, string>   // scene_tag → imageUrl
@@ -183,6 +185,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   messages: [],
   currentLocation: '',
   currentScene: null,
+  quests: [],
   sceneImageCache: {},
   npcPortraitCache: {},
   isLoading: false,
@@ -271,6 +274,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       messages: session.messages,
       currentLocation: session.currentLocation,
       currentScene: session.currentScene ?? null,
+      quests: session.quests ?? [],
       world,
       npcs,
       narrative,
@@ -413,28 +417,52 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   // ── Create session ────────────────────────────────────────
   createSession: async (data) => {
-    set({ isLoading: true, error: null })
     const { world, narrative } = get()
 
+    const character: PlayerCharacter = {
+      name: data.name,
+      age: data.age,
+      gender: data.gender,
+      characterClass: data.characterClass,
+      background: data.backstory,
+      backstory: data.backstory,
+      stats: getInitialStats(data.characterClass),
+    }
+    const sessionId = uuidv4()
+
+    // 즉시 game 화면으로 전환 (isProcessing이 초기 장면 로딩을 표시)
+    lsSet(LS_LAST_SESSION, sessionId)
+    updateUrlWithSession(sessionId)
+    set({
+      sessionId,
+      character,
+      messages: [],
+      currentLocation: '',
+      currentScene: null,
+      quests: [],
+      isProcessing: true,
+      streamingContent: '',
+      phase: 'game',
+      error: null,
+    })
+
+    // 퀘스트 생성 (백그라운드, 논블로킹)
+    axios.post('/api/quests/generate', {
+      worldName: world?.name ?? '',
+      character: { name: data.name, characterClass: data.characterClass, backstory: data.backstory },
+    }, { timeout: 30000 }).then(res => {
+      const quests: Quest[] = res.data.quests ?? []
+      set({ quests })
+    }).catch(() => {})
+
+    // 초기 장면 생성
     try {
       const res = await axios.post('/api/session/create', {
         ...data,
         worldData: world,
         narrative,
-      })
+      }, { timeout: 90000 })
       const { initialNarration, sceneImageUrl, currentLocation } = res.data
-
-      const character: PlayerCharacter = {
-        name: data.name,
-        age: data.age,
-        gender: data.gender,
-        characterClass: data.characterClass,
-        background: data.backstory,
-        backstory: data.backstory,
-        stats: getInitialStats(data.characterClass),
-      }
-
-      const sessionId = uuidv4()
 
       const firstMessage: GameMessage = {
         id: 'msg_initial',
@@ -455,6 +483,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           currentLocation,
           npcsPresent: [],
         } : undefined,
+        quests: get().quests,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
@@ -462,23 +491,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
       sessions[sessionId] = session
       lsSet(LS_SESSIONS, sessions)
-      lsSet(LS_LAST_SESSION, sessionId)
       saveSessionToServer(session)
-      updateUrlWithSession(sessionId)
 
       set({
-        sessionId,
-        character,
         messages: [firstMessage],
         currentLocation,
         currentScene: session.currentScene ?? null,
-        isLoading: false,
-        phase: 'game',
+        isProcessing: false,
       })
 
       get().loadSessions()
     } catch (err: unknown) {
-      set({ error: `세션 생성 실패: ${extractMessage(err)}`, isLoading: false })
+      set({ error: `모험 시작 실패: ${extractMessage(err)}`, isProcessing: false })
     }
   },
 
@@ -563,6 +587,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           const {
             narration, summary, sceneImageUrl, sceneImagePending: imagePending, sceneTag,
             currentLocation: newLoc, npcSpeaking, gameOver, newNpc, suggestedActions, statChanges,
+            questUpdates,
           } = data as {
             narration: string
             summary: string
@@ -575,6 +600,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             newNpc: NPC | null
             suggestedActions: string[]
             statChanges: { hp_change: number; mana_change: number; gold_change: number; experience_gain: number } | null
+            questUpdates: Array<{ id: string; title?: string; description?: string; status?: string; objectives?: string[] }> | null
           }
 
           // null + imagePending → image is coming async, don't fallback
@@ -641,6 +667,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
             }
           }
 
+          // Apply quest updates from AI
+          let updatedQuests = get().quests
+          if (questUpdates && questUpdates.length > 0) {
+            updatedQuests = [...updatedQuests]
+            for (const u of questUpdates) {
+              if (u.id === 'new' && u.title) {
+                updatedQuests.push({
+                  id: `q_${Date.now()}`,
+                  title: u.title,
+                  description: u.description ?? '',
+                  status: (u.status as Quest['status']) ?? 'active',
+                  objectives: u.objectives ?? [],
+                })
+              } else {
+                updatedQuests = updatedQuests.map(q =>
+                  q.id === u.id ? { ...q, ...(u.status ? { status: u.status as Quest['status'] } : {}) } : q
+                )
+              }
+            }
+          }
+
           set({
             messages: newMessages,
             currentLocation: updatedLocation,
@@ -648,6 +695,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             sceneImageCache: updatedSceneCache,
             npcPortraitCache: updatedNpcCache,
             suggestedActions: suggestedActions ?? [],
+            quests: updatedQuests,
             isProcessing: false,
             streamingContent: '',
             ...(updatedCharacter !== prevChar ? { character: updatedCharacter } : {}),
@@ -743,6 +791,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         messages: session.messages,
         currentLocation: session.currentLocation,
         currentScene: session.currentScene ?? null,
+        quests: session.quests ?? [],
         world,
         npcs,
         narrative,
@@ -786,7 +835,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       world: null, npcs: [], narrative: '', mapImageUrl: null,
       character: null, backgroundOptions: [],
       sessionId: null, messages: [], currentLocation: '',
-      currentScene: null, sceneImageCache: {}, npcPortraitCache: {}, error: null,
+      currentScene: null, quests: [], sceneImageCache: {}, npcPortraitCache: {}, error: null,
     })
   },
 }))

@@ -542,6 +542,24 @@ router.get('/session/:id', async (req: Request, res: Response) => {
 })
 
 // ================================================================
+// POST /api/quests/generate — Generate initial quests from backstory
+// ================================================================
+router.post('/quests/generate', async (req: Request, res: Response) => {
+  const { worldName, character } = req.body as {
+    worldName: string
+    character: { name: string; characterClass: string; backstory: string }
+  }
+  if (!character?.backstory) return res.status(400).json({ error: 'character required' })
+  try {
+    const quests = await claude.generateInitialQuests(worldName ?? '', character)
+    res.json({ quests })
+  } catch (err) {
+    console.error('[API] Quest generation error:', err)
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
 // GET /api/sessions — List all sessions from server disk
 // ================================================================
 router.get('/sessions', async (_req: Request, res: Response) => {

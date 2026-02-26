@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useGameStore } from '../store/gameStore'
 import type { GameMessage, NPC } from '../types/game'
+import CharacterInfoPanel from './CharacterInfoPanel'
 
 // ── Scene image display ──────────────────────────────
 function SceneImage({ url, alt, pending }: { url?: string; alt: string; pending?: boolean }) {
@@ -273,6 +274,7 @@ export default function GameScreen() {
   const { messages, npcs, sendAction, isProcessing, streamingContent, suggestedActions, error, resetGame } = useGameStore()
   const [input, setInput] = useState('')
   const [showMenu, setShowMenu] = useState(false)
+  const [showInfoPanel, setShowInfoPanel] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -312,6 +314,7 @@ export default function GameScreen() {
 
   return (
     <div className="flex flex-col h-screen" style={{ background: '#05050a' }}>
+      {showInfoPanel && <CharacterInfoPanel onClose={() => setShowInfoPanel(false)} />}
 
       {/* Top bar: Stats + Menu */}
       <div style={{ background: 'rgba(5,5,10,0.95)', borderBottom: '1px solid #1a1020' }}>
@@ -335,13 +338,8 @@ export default function GameScreen() {
               style={{ zIndex: 50 }}>
               <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-white/5"
                 style={{ color: 'rgba(232,213,176,0.8)', borderBottom: '1px solid #1a1020' }}
-                onClick={() => setShowMenu(false)}>
-                📜 대화 기록
-              </button>
-              <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-white/5"
-                style={{ color: 'rgba(232,213,176,0.8)', borderBottom: '1px solid #1a1020' }}
-                onClick={() => setShowMenu(false)}>
-                👑 NPC 목록
+                onClick={() => { setShowMenu(false); setShowInfoPanel(true) }}>
+                📋 캐릭터 정보
               </button>
               <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-red-900/20"
                 style={{ color: '#e74c3c' }}

@@ -7,6 +7,7 @@ import type {
   CharacterClass,
   GameMessage,
   PlayerCharacter,
+  Quest,
 } from '../../src/types/game'
 
 let _apiKey: string | undefined = process.env.ANTHROPIC_API_KEY
@@ -301,10 +302,15 @@ JSON 배열:
 // falling back to truncated content. Allows sending many more turns
 // without blowing up the token budget.
 function buildHistoryText(history: GameMessage[]): string {
-  return history.slice(-12).map(m => {
+  const recent = history.slice(-20)
+  return recent.map((m, idx) => {
     if (m.role === 'player') return `[플레이어] ${m.content}`
     const prefix = m.role === 'npc' ? `[${m.npcName || 'NPC'}]` : '[나레이터]'
-    const text = m.summary ?? m.content.slice(0, 120)
+    // 최근 3턴(나레이터)은 원문 그대로, 그 이전은 요약 사용
+    const isRecent = idx >= recent.length - 6
+    const text = isRecent
+      ? (m.summary ? `${m.summary}\n  (장면: ${m.content.slice(0, 200)})` : m.content.slice(0, 300))
+      : (m.summary ?? m.content.slice(0, 150))
     return `${prefix} ${text}`
   }).join('\n\n')
 }
@@ -312,7 +318,7 @@ function buildHistoryText(history: GameMessage[]): string {
 // The extra JSON fields we ask Claude to return alongside narration
 const GM_JSON_FORMAT = `{
   "narration": "웹소설 스타일의 서술 (3-4문단, 대사 포함, 한국어, 최소 250자)",
-  "summary": "이번 턴 핵심 요약 (한국어 1-2문장, 50자 이내): 플레이어 행동 결과와 중요 정보만",
+  "summary": "이번 턴 요약 (한국어 2-4문장, 150자 이내): 플레이어 행동, 결과, 등장 NPC와 대화 내용, 발생한 사건, 장소 변화, 획득/손실 정보 등 핵심 맥락을 모두 포함",
   "scene_description": "English description for image generation: location, atmosphere, characters present, time of day, weather, mood (max 60 words)",
   "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
   "reuse_scene_image": false,
@@ -328,8 +334,15 @@ const GM_JSON_FORMAT = `{
     "mana_change": 0,
     "gold_change": 0,
     "experience_gain": 0
-  }
+  },
+  "quest_updates": null
 }`
+
+// quest_updates 사용 규칙: 퀘스트 변화가 있을 때만 배열로 채움
+// 예: [{"id":"q1","status":"completed"}, {"id":"new","title":"새 퀘스트","description":"...","status":"active","objectives":["목표1"]}]
+// - 기존 퀘스트 완료/실패: id + status만 설정
+// - 새 퀘스트 추가: id="new", title/description/objectives 필수
+// - 변화 없으면 null
 
 const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
 - 위 NPC 목록에 없는 새 인물이 이야기에 등장해야 할 때만 new_npc 필드를 채우세요
@@ -616,4 +629,41 @@ JSON 형식:
   const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
   return parseJson<ClaudeGameResponse>(textContent.text.trim(), /\{[\s\S]*\}/, '초기 장면 생성')
+}
+
+// ================================================================
+// 7. INITIAL QUESTS GENERATION
+// ================================================================
+export async function generateInitialQuests(
+  worldName: string,
+  character: { name: string; characterClass: string; backstory: string }
+): Promise<Quest[]> {
+  console.log('[Claude] Generating initial quests...')
+  const msg = await getClient().messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 700,
+    messages: [{
+      role: 'user',
+      content: `판타지 RPG 세계 "${worldName}"에서 다음 캐릭터의 배경 이야기를 바탕으로 시작 퀘스트 2개를 JSON으로 만들어주세요.
+
+캐릭터: ${character.name} (${character.characterClass})
+배경: ${character.backstory}
+
+규칙:
+- 첫 번째 퀘스트: 배경 이야기에서 직접 파생된 개인적인 목표 (복수, 찾기, 증명 등)
+- 두 번째 퀘스트: 세계에서 활동하기 위한 현실적인 시작 목표 (길드 등록, 정보 수집 등)
+- 제목은 15자 이내, 목표는 각 10자 이내로 간결하게
+
+반드시 JSON만 반환:
+{"quests":[{"id":"q1","title":"","description":"","status":"active","objectives":["",""]},{"id":"q2","title":"","description":"","status":"active","objectives":[""]}]}`
+    }],
+  })
+
+  const text = msg.content[0].type === 'text' ? msg.content[0].text : ''
+  try {
+    const parsed = JSON.parse(text.match(/\{[\s\S]*\}/)?.[0] ?? '{"quests":[]}')
+    return (parsed.quests ?? []) as Quest[]
+  } catch {
+    return []
+  }
 }

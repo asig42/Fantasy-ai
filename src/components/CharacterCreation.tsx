@@ -27,14 +27,10 @@ export default function CharacterCreation() {
   const [customBg, setCustomBg] = useState('')
   const [useCustomBg, setUseCustomBg] = useState(false)
 
-  useEffect(() => {
-    if (selectedClass && step === 'background' && backgroundOptions.length === 0) {
-      fetchBackgrounds(selectedClass)
-    }
-  }, [step, selectedClass, backgroundOptions.length, fetchBackgrounds])
-
+  // 클래스 선택 즉시 배경 미리 생성 (step 3 도달 전에 완료되도록)
   const handleClassSelect = (cls: CharacterClass) => {
     setSelectedClass(cls)
+    fetchBackgrounds(cls)
   }
 
   const handleNext = () => {
@@ -42,7 +38,8 @@ export default function CharacterCreation() {
       setStep('info')
     } else if (step === 'info' && name.trim()) {
       setStep('background')
-      fetchBackgrounds(selectedClass!)
+      // 아직 로드 안 됐으면 다시 시도
+      if (backgroundOptions.length === 0) fetchBackgrounds(selectedClass!)
     }
   }
 
