@@ -1,5 +1,5 @@
 import { fal } from '@fal-ai/client'
-import type { VisualDirection, NPC, PlayerCharacter } from '../../src/types/game'
+import type { VisualDirection, NPC } from '../../src/types/game'
 
 // Configure fal.ai if key is available
 if (process.env.FAL_KEY) {
@@ -63,24 +63,25 @@ function placeholderDataUrl(type: 'map' | 'portrait' | 'scene', label: string): 
 
 // ---------- Main Image Generation Functions (stateless - no file I/O) ----------
 
-// 💡 유지보수를 위해 공통으로 들어갈 프롬프트 태그를 위로 빼두었습니다.
-const SDXL_PREFIX = "score_9, score_8_up, score_7_up, rating_explicit, (masterpiece), (best quality), anime style, (medieval fantasy), (high fantasy), sword and sorcery, european medieval setting, vibrant cinematic lighting, ";
-// 부정 태그: 현대/미래/공상과학 요소 철저히 제거
-const SDXL_NEGATIVE = "low quality, bad anatomy, text, error, blurry, photo, ugly, deformed, extra limbs, lowres, monochrome, science fiction, futuristic, sci-fi, modern, contemporary, spaceship, robot, firearm, gun, pistol, technology, neon lights, cyberpunk, 21st century, skyscraper, car, computer, electricity pole, modern architecture, child, loli, shota, infant, baby face, young child";
+// 💡 일반 SDXL 모델이 비주얼 노벨/애니메이션 스타일을 더 잘 묘사하도록 수정
+const SDXL_PREFIX = "(masterpiece, best quality, highres:1.2), visual novel CG art style, 2d anime illustration, vibrant cinematic lighting, flat color, clear outlines, ";
+
+// 💡 실사풍(realistic)으로 빠지거나 기괴한 인체가 나오는 것을 강하게 방지
+const ANIMAGINE_NEGATIVE = "(worst quality, low quality, normal quality:1.4), (realistic, photorealistic, 3d, lip, nose:1.3), bad anatomy, bad hands, missing fingers, extra digit, ugly, deformed, text, error, blurry, monochrome";
 
 function determineComposition(description: string): string {
   const desc = description.toLowerCase();
-  
+
   // 1. 아주 가까운 감정 묘사 (키스, 유혹, 속삭임 등)
   if (desc.includes('kiss') || desc.includes('whisper') || desc.includes('intimate') || desc.includes('seductive') || desc.includes('breath')) {
     return "extreme close-up, focused on faces and expressions, intimate proximity, shallow depth of field, blurred background";
   }
-  
+
   // 2. 인물 간의 교감이나 대화 (포옹, 마주보기, 손잡기 등)
   if (desc.includes('hug') || desc.includes('embrace') || desc.includes('talking') || desc.includes('holding hands') || desc.includes('looking at each other')) {
     return "medium shot, upper body, two characters interacting closely, emotional tension, focus on character chemistry";
   }
-  
+
   // 3. 인물이 중심이 되는 일반적인 상황
   if (desc.includes('character') || desc.includes('standing') || desc.includes('sitting')) {
     return "cowboy shot, medium full shot, character-centric, detailed character features";
@@ -102,16 +103,17 @@ export async function generateMapImage(
 
   try {
     fal.config({ credentials: falKey })
-    // 지도에도 기본 퀄리티 향상을 위해 Prefix 적용
     const prompt = `${SDXL_PREFIX}fantasy world map illustration, parchment texture, hand-drawn, top-down aerial view, two large continents named ${continents.map(c => c.name).join(' and ')}, mountains, forests, rivers, ocean with decorative waves, compass rose, decorative border, medieval fantasy cartography style, warm golden-brown colors, high quality`
 
-    const result = await fal.subscribe('fal-ai/fast-sdxl', {
+    const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {
         prompt,
-        negative_prompt: SDXL_NEGATIVE,
+        negative_prompt: ANIMAGINE_NEGATIVE,
         image_size: 'landscape_16_9',
-        num_inference_steps: 25, // SDXL에 맞는 스텝 수
-        enable_safety_checker: false, // 검열 해제
+        num_inference_steps: 28,
+        guidance_scale: 7.0,
+        scheduler: "Euler a",
+        enable_safety_checker: false,
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
@@ -123,7 +125,7 @@ export async function generateMapImage(
 }
 
 export async function generateNpcPortrait(
-  npc: { name: string; title: string; appearance: string; gender: string; age?: number }
+  npc: { name: string; title: string; appearance: string; gender: string }
 ): Promise<string> {
   const falKey = process.env.FAL_KEY
   if (!falKey) {
@@ -133,16 +135,17 @@ export async function generateNpcPortrait(
   try {
     fal.config({ credentials: falKey })
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
-    const ageDesc = npc.age ? `${npc.age} years old, ` : ''
-    const prompt = `${SDXL_PREFIX}full body character portrait, (medieval fantasy), fantasy RPG character art, ${genderWord}, ${ageDesc}${npc.appearance}, ${npc.title}, standing pose, detailed medieval fantasy outfit, consistent character design, clean gradient background, visual novel character art style`
+    const prompt = `${SDXL_PREFIX}full body character portrait, fantasy RPG character art, ${genderWord}, ${npc.appearance}, ${npc.title}, standing pose, detailed fantasy outfit, consistent character design, clean gradient background, visual novel character art style`
 
-    const result = await fal.subscribe('fal-ai/fast-sdxl', {
+    const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {
         prompt,
-        negative_prompt: SDXL_NEGATIVE,
-        image_size: 'portrait_4_3',
-        num_inference_steps: 25,
-        enable_safety_checker: false, // NSFW 허용
+        negative_prompt: ANIMAGINE_NEGATIVE,
+        image_size: 'landscape_16_9',
+        num_inference_steps: 28,
+        guidance_scale: 7.0,
+        scheduler: "Euler a",
+        enable_safety_checker: false,
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
@@ -154,7 +157,7 @@ export async function generateNpcPortrait(
 }
 
 export async function generateNpcEmotion(
-  npc: { name: string; appearance: string; gender: string; age?: number },
+  npc: { name: string; appearance: string; gender: string },
   emotion: string,
   emotionDescription: string
 ): Promise<string> {
@@ -176,16 +179,17 @@ export async function generateNpcEmotion(
     }
 
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
-    const ageDesc = npc.age ? `${npc.age} years old, ` : ''
-    const prompt = `${SDXL_PREFIX}bust portrait, (medieval fantasy), fantasy character, ${genderWord}, ${ageDesc}${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, consistent character design, visual novel character art style, clean background`
+    const prompt = `${SDXL_PREFIX}bust portrait, fantasy character, ${genderWord}, ${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, consistent character design, visual novel character art style, clean background`
 
-    const result = await fal.subscribe('fal-ai/fast-sdxl', {
+    const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {
         prompt,
-        negative_prompt: SDXL_NEGATIVE,
-        image_size: 'square_hd',
-        num_inference_steps: 25,
-        enable_safety_checker: false, // NSFW 허용
+        negative_prompt: ANIMAGINE_NEGATIVE,
+        image_size: 'landscape_16_9',
+        num_inference_steps: 28,
+        guidance_scale: 7.0,
+        scheduler: "Euler a",
+        enable_safety_checker: false,
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
@@ -198,11 +202,11 @@ export async function generateNpcEmotion(
 
 // ── Camera shot → composition prompt mapping ──────────────────
 const SHOT_COMPOSITION: Record<NonNullable<VisualDirection['camera_shot']>, string> = {
-  'close-up':  'extreme close-up shot, face and expression details, shallow depth of field, blurred bokeh background',
-  'bust-up':   'bust-up portrait shot, focused on upper body and face, slight depth of field',
-  'waist-up':  'waist-up shot, character interaction visible, medium shot, detailed torso and face',
-  'full-body': 'full body shot, dynamic standing pose, cinematic character showcase',
-  'wide':      'wide angle establishing shot, breathtaking environment, character small in frame',
+  'close-up':  'close-up shot, detailed face, shallow depth of field, blurred background',
+  'bust-up':   'cowboy shot, upper body, detailed clothing, slight depth of field',
+  'waist-up':  'medium shot, waist up, character interaction, detailed torso',
+  'full-body': 'full body shot, standing, showing shoes and full outfit, cinematic setup',
+  'wide':      'wide establishing shot, breathtaking distant environment, characters small in frame',
 }
 
 // ── Focus type → additional tags ─────────────────────────────
@@ -233,14 +237,14 @@ const LOCATION_TAGS: Record<string, string> = {
 
 // ── Weather → visual tags ─────────────────────────────────────
 const WEATHER_TAGS: Record<string, string> = {
-  '맑음':   'clear blue sky, bright golden sunlight, warm lighting',
-  '흐림':   'overcast cloudy sky, diffused soft lighting, grey tones',
-  '비':     'heavy rain, wet cobblestones, rain drops, dark overcast',
-  '폭풍':   'violent storm, lightning in dark clouds, dramatic stormy atmosphere',
-  '안개':   'thick misty fog, ethereal atmosphere, soft diffused light',
-  '눈':     'snow falling gently, white snowy ground, winter atmosphere',
-  '뇌우':   'thunderstorm, lightning flash, dark dramatic sky, heavy downpour',
-  '사막열풍':'swirling sand dust, harsh sunlight, heat haze, desert winds',
+  '맑음':    'clear blue sky, bright golden sunlight, warm lighting',
+  '흐림':    'overcast cloudy sky, diffused soft lighting, grey tones',
+  '비':      'heavy rain, wet cobblestones, rain drops, dark overcast',
+  '폭풍':    'violent storm, lightning in dark clouds, dramatic stormy atmosphere',
+  '안개':    'thick misty fog, ethereal atmosphere, soft diffused light',
+  '눈':      'snow falling gently, white snowy ground, winter atmosphere',
+  '뇌우':    'thunderstorm, lightning flash, dark dramatic sky, heavy downpour',
+  '사막열풍': 'swirling sand dust, harsh sunlight, heat haze, desert winds',
 }
 
 export async function generateEnhancedSceneImage(
@@ -257,13 +261,14 @@ export async function generateEnhancedSceneImage(
   try {
     fal.config({ credentials: falKey })
 
-    // ── NPC 나이와 외모를 프롬프트에 반영해 시각적 일관성 유지 ──
-    const npcAppearance = activeNpcs && activeNpcs.length > 0
-      ? activeNpcs
-          .map(n => `${n.age ? `${n.age}yo ` : ''}${n.appearance}`)
-          .filter(Boolean)
-          .join(', ')
-      : ''
+    // ── NPC 외모를 프롬프트에 반영해 시각적 일관성 유지 ──
+    let npcAppearance = '';
+    if (activeNpcs && activeNpcs.length > 0) {
+      const targetNpcs = activeNpcs.slice(0, 2);
+      npcAppearance = targetNpcs.map(n => `(${n.appearance}:1.1)`).join(', ');
+      const personCount = targetNpcs.length === 1 ? "1girl/1boy, solo" : "2girls/2boys/1girl 1boy, multiple characters";
+      npcAppearance = `${personCount}, ${npcAppearance}`;
+    }
 
     // ── 장소/날씨 태그 추출 ──
     const locationTag = currentLocation
@@ -274,7 +279,7 @@ export async function generateEnhancedSceneImage(
     // ── visual_direction 지시값 → 프롬프트 구성 요소 결정 ──
     const composition = direction?.camera_shot
       ? SHOT_COMPOSITION[direction.camera_shot]
-      : determineComposition(sceneDescription)   // 폴백: 기존 자동 감지
+      : determineComposition(sceneDescription)
 
     const focusTags = direction?.focus ? FOCUS_TAGS[direction.focus] : 'character-centric composition'
     const lightingTag = direction?.lighting ?? 'cinematic atmospheric lighting'
@@ -289,7 +294,6 @@ export async function generateEnhancedSceneImage(
     // ── 최종 프롬프트 조합 ──
     const promptParts = [
       SDXL_PREFIX,
-      '(medieval fantasy setting:1.3)',
       locationTag,
       weatherTag,
       composition,
@@ -303,15 +307,16 @@ export async function generateEnhancedSceneImage(
 
     const prompt = promptParts.join(', ')
 
-    console.log(`[Image] Enhanced scene | intensity=${direction?.intensity ?? 'auto'} steps=${inferenceSteps} loc=${currentLocation ?? '-'} weather=${weather ?? '-'}`)
+    console.log(`[Image] Enhanced scene | intensity=${direction?.intensity ?? 'auto'} steps=${inferenceSteps} shot=${direction?.camera_shot ?? 'auto'} loc=${currentLocation ?? '-'} weather=${weather ?? '-'}`)
 
-    const result = await fal.subscribe('fal-ai/fast-sdxl', {
+    const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {
         prompt,
-        negative_prompt: SDXL_NEGATIVE,
+        negative_prompt: ANIMAGINE_NEGATIVE,
         image_size: 'landscape_16_9',
         num_inference_steps: inferenceSteps,
-        guidance_scale: isHighIntensity ? 8.0 : 7.5,
+        guidance_scale: isHighIntensity ? 8.0 : 7.0,
+        scheduler: "Euler a",
         enable_safety_checker: false,
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
