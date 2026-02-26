@@ -63,8 +63,30 @@ function placeholderDataUrl(type: 'map' | 'portrait' | 'scene', label: string): 
 // ---------- Main Image Generation Functions (stateless - no file I/O) ----------
 
 // 💡 유지보수를 위해 공통으로 들어갈 프롬프트 태그를 위로 빼두었습니다.
-const SDXL_PREFIX = "score_9, score_8_up, score_7_up, rating_explicit, (masterpiece), (best quality), anime style, ";
-const SDXL_NEGATIVE = "low quality, bad anatomy, text, error, blurry, photo, realistic, ugly, deformed, extra limbs";
+const SDXL_PREFIX = "score_9, score_8_up, score_7_up, rating_explicit, (masterpiece), (best quality), anime style, vibrant cinematic lighting, ";
+const SDXL_NEGATIVE = "low quality, bad anatomy, text, error, blurry, photo, realistic, ugly, deformed, extra limbs, lowres, monochrome";
+
+function determineComposition(description: string): string {
+  const desc = description.toLowerCase();
+  
+  // 1. 아주 가까운 감정 묘사 (키스, 유혹, 속삭임 등)
+  if (desc.includes('kiss') || desc.includes('whisper') || desc.includes('intimate') || desc.includes('seductive') || desc.includes('breath')) {
+    return "extreme close-up, focused on faces and expressions, intimate proximity, shallow depth of field, blurred background";
+  }
+  
+  // 2. 인물 간의 교감이나 대화 (포옹, 마주보기, 손잡기 등)
+  if (desc.includes('hug') || desc.includes('embrace') || desc.includes('talking') || desc.includes('holding hands') || desc.includes('looking at each other')) {
+    return "medium shot, upper body, two characters interacting closely, emotional tension, focus on character chemistry";
+  }
+  
+  // 3. 인물이 중심이 되는 일반적인 상황
+  if (desc.includes('character') || desc.includes('standing') || desc.includes('sitting')) {
+    return "cowboy shot, medium full shot, character-centric, detailed character features";
+  }
+
+  // 4. 기본: 배경과 인물의 조화
+  return "wide shot, cinematic composition, character in environment";
+}
 
 export async function generateMapImage(
   worldName: string,
@@ -171,28 +193,34 @@ export async function generateNpcEmotion(
 }
 
 export async function generateSceneImage(sceneDescription: string): Promise<string> {
-  const falKey = process.env.FAL_KEY
+  const falKey = process.env.FAL_KEY;
   if (!falKey) {
-    return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
+    return placeholderDataUrl('scene', sceneDescription.slice(0, 40));
   }
 
   try {
-    fal.config({ credentials: falKey })
-    const prompt = `${SDXL_PREFIX}16:9 aspect ratio, fantasy RPG scene, ${sceneDescription}, character-focused composition, one or more characters prominently visible in the foreground, full body or upper body characters in frame, dramatic atmospheric lighting, vibrant detailed colors, cinematic composition, visual novel art style`
+    fal.config({ credentials: falKey });
+
+    // 상황에 맞는 구도 힌트 추출
+    const compositionHint = determineComposition(sceneDescription);
+    
+    // 최종 프롬프트 조합: 고수위 애니메이션 스타일 + 구도 + 상세 설명
+    const prompt = `${SDXL_PREFIX} ${compositionHint}, ${sceneDescription}, highly detailed emotional expressions, intricate clothing textures, atmospheric lighting, depth of field, (visual novel cg style)`;
 
     const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
         prompt,
         negative_prompt: SDXL_NEGATIVE,
         image_size: 'landscape_16_9',
-        num_inference_steps: 25,
-        enable_safety_checker: false, // NSFW 허용
+        num_inference_steps: 30, // 퀄리티를 위해 스텝 수 소폭 상향
+        enable_safety_checker: false, // 성인용 묘사 허용
+        guidance_scale: 7.5,
       },
-    }) as unknown as { data: { images: Array<{ url: string }> } }
+    }) as unknown as { data: { images: Array<{ url: string }> } };
 
-    return result.data?.images?.[0]?.url ?? placeholderDataUrl('scene', sceneDescription.slice(0, 40))
+    return result.data?.images?.[0]?.url ?? placeholderDataUrl('scene', sceneDescription.slice(0, 40));
   } catch (err) {
-    console.error('[Image] Scene generation failed:', err)
-    return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
+    console.error('[Image] Scene generation failed:', err);
+    return placeholderDataUrl('scene', sceneDescription.slice(0, 40));
   }
 }
