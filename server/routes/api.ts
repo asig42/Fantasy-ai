@@ -6,7 +6,7 @@ import {
   saveWorld, loadWorld,
   saveNPCs, loadNPCs,
   saveNarrative, loadNarrative,
-  saveSession, loadSession,
+  saveSession, loadSession, listSessions, deleteSession,
 } from '../services/storage.service'
 import type {
   WorldData,
@@ -536,6 +536,31 @@ router.get('/session/:id', async (req: Request, res: Response) => {
     const session = await loadSession(req.params.id)
     if (!session) return res.status(404).json({ error: 'Session not found' })
     res.json({ session })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// GET /api/sessions — List all sessions from server disk
+// ================================================================
+router.get('/sessions', async (_req: Request, res: Response) => {
+  try {
+    const sessions = await listSessions()
+    res.json({ sessions })
+  } catch (err) {
+    res.status(500).json({ error: String(err) })
+  }
+})
+
+// ================================================================
+// DELETE /api/session/:id — Delete a session from server disk
+// ================================================================
+router.delete('/session/:id', async (req: Request, res: Response) => {
+  try {
+    const deleted = await deleteSession(req.params.id)
+    if (!deleted) return res.status(404).json({ error: 'Session not found' })
+    res.json({ success: true })
   } catch (err) {
     res.status(500).json({ error: String(err) })
   }

@@ -72,6 +72,13 @@ export async function loadSession(sessionId: string): Promise<GameSession | null
   return fs.readJson(filePath)
 }
 
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  const filePath = path.join(DATA_DIR, 'sessions', `${sessionId}.json`)
+  if (!(await fs.pathExists(filePath))) return false
+  await fs.remove(filePath)
+  return true
+}
+
 // ---------- Image Paths ----------
 export function getMapImagePath(): string {
   return path.join(PUBLIC_DIR, 'images', 'map', 'world-map.png')

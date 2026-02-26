@@ -161,8 +161,10 @@ interface GameStore {
   setError: (err: string | null) => void
   saveApiKey: (anthropicKey: string, falKey?: string) => Promise<void>
   loadSessions: () => void
+  loadServerSessions: () => Promise<void>
   resumeSession: (sessionId: string) => void
   resumeSessionFromServer: (sessionId: string) => Promise<void>
+  deleteSession: (sessionId: string) => Promise<void>
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -220,6 +222,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }))
     summaries.sort((a, b) => b.updatedAt - a.updatedAt)
     set({ savedSessions: summaries })
+  },
+
+  // ── Load sessions from server (cross-device) ────────────
+  loadServerSessions: async () => {
+    try {
+      const res = await axios.get('/api/sessions', { timeout: 5000 })
+      const serverSessions: SessionSummary[] = res.data.sessions ?? []
+      if (serverSessions.length === 0) return
+
+      // Merge with localStorage sessions (server sessions take priority for updatedAt)
+      set(state => {
+        const merged = new Map<string, SessionSummary>()
+        for (const s of state.savedSessions) merged.set(s.id, s)
+        for (const s of serverSessions) {
+          const existing = merged.get(s.id)
+          if (!existing || s.updatedAt > existing.updatedAt) merged.set(s.id, s)
+        }
+        const sorted = Array.from(merged.values()).sort((a, b) => b.updatedAt - a.updatedAt)
+        return { savedSessions: sorted }
+      })
+    } catch {
+      // server unavailable — localStorage only
+    }
   },
 
   // ── Resume a saved session from localStorage ─────────────
@@ -331,6 +356,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     get().loadSessions()
+    get().loadServerSessions()
 
     let world = lsGet<WorldData>(LS_WORLD)
     let npcs = lsGet<NPC[]>(LS_NPCS)
@@ -727,6 +753,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } catch (err) {
       set({ error: `세션 불러오기 실패: ${extractMessage(err)}`, isLoading: false })
     }
+  },
+
+  // ── Delete a saved session ────────────────────────────────
+  deleteSession: async (sessionId: string) => {
+    // Remove from localStorage
+    const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
+    delete sessions[sessionId]
+    lsSet(LS_SESSIONS, sessions)
+
+    // Remove from server
+    try {
+      await axios.delete(`/api/session/${sessionId}`, { timeout: 5000 })
+    } catch { /* ignore — local deletion is enough */ }
+
+    // If this was the last session, clear that reference too
+    const lastId = lsGet<string>(LS_LAST_SESSION)
+    if (lastId === sessionId) lsDel(LS_LAST_SESSION)
+
+    // Refresh session list
+    get().loadSessions()
+    get().loadServerSessions()
   },
 
   // ── Reset game ────────────────────────────────────────────

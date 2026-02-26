@@ -12,7 +12,7 @@ const PARTICLES = Array.from({ length: 12 }, (_, i) => ({
 export default function StartScreen() {
   const {
     initGame, isLoading, error, loadGameData,
-    hasApiKey, world, savedSessions, saveApiKey, resumeSession,
+    hasApiKey, world, savedSessions, saveApiKey, resumeSession, deleteSession,
   } = useGameStore()
 
   const [showError, setShowError] = useState(false)
@@ -268,40 +268,65 @@ export default function StartScreen() {
         {showSaveList && savedSessions.length > 0 && (
           <div className="w-full flex flex-col gap-2">
             {savedSessions.map(s => (
-              <button
+              <div
                 key={s.id}
-                onClick={() => resumeSession(s.id)}
-                disabled={isLoading}
-                className="w-full p-3 rounded border text-left transition-all"
-                style={{
-                  borderColor: 'rgba(212,175,55,0.25)',
-                  background: 'rgba(212,175,55,0.03)',
-                  color: 'rgba(232,213,176,0.9)',
-                }}
-                onMouseEnter={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(212,175,55,0.08)'
-                }}
-                onMouseLeave={e => {
-                  (e.currentTarget as HTMLButtonElement).style.background = 'rgba(212,175,55,0.03)'
-                }}
+                className="w-full rounded border"
+                style={{ borderColor: 'rgba(212,175,55,0.25)', background: 'rgba(212,175,55,0.03)' }}
               >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-sm font-bold" style={{ color: '#D4AF37' }}>
-                      {classEmoji[s.characterClass] ?? '⚔'} {s.characterName}
-                    </span>
-                    <span className="text-xs ml-2" style={{ color: 'rgba(160,144,112,0.7)' }}>
-                      Lv.{s.level} {s.characterClass}
+                <button
+                  onClick={() => resumeSession(s.id)}
+                  disabled={isLoading}
+                  className="w-full p-3 text-left transition-all"
+                  style={{ color: 'rgba(232,213,176,0.9)' }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'rgba(212,175,55,0.08)'
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                  }}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-sm font-bold" style={{ color: '#D4AF37' }}>
+                        {classEmoji[s.characterClass] ?? '⚔'} {s.characterName}
+                      </span>
+                      <span className="text-xs ml-2" style={{ color: 'rgba(160,144,112,0.7)' }}>
+                        Lv.{s.level} {s.characterClass}
+                      </span>
+                    </div>
+                    <span className="text-xs" style={{ color: 'rgba(160,144,112,0.6)' }}>
+                      {formatDate(s.updatedAt)}
                     </span>
                   </div>
-                  <span className="text-xs" style={{ color: 'rgba(160,144,112,0.6)' }}>
-                    {formatDate(s.updatedAt)}
-                  </span>
+                  <p className="text-xs mt-1" style={{ color: 'rgba(160,144,112,0.7)' }}>
+                    📍 {s.currentLocation}
+                  </p>
+                </button>
+                <div className="px-3 pb-2 flex justify-end">
+                  <button
+                    onClick={() => {
+                      if (confirm(`"${s.characterName}" 저장파일을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+                        deleteSession(s.id)
+                      }
+                    }}
+                    disabled={isLoading}
+                    className="text-xs px-3 py-1 rounded border transition-all"
+                    style={{
+                      borderColor: 'rgba(180,60,60,0.4)',
+                      color: 'rgba(220,100,100,0.8)',
+                      background: 'transparent',
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'rgba(180,60,60,0.15)'
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent'
+                    }}
+                  >
+                    🗑 삭제
+                  </button>
                 </div>
-                <p className="text-xs mt-1" style={{ color: 'rgba(160,144,112,0.7)' }}>
-                  📍 {s.currentLocation}
-                </p>
-              </button>
+              </div>
             ))}
           </div>
         )}
