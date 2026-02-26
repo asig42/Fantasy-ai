@@ -62,6 +62,10 @@ function placeholderDataUrl(type: 'map' | 'portrait' | 'scene', label: string): 
 
 // ---------- Main Image Generation Functions (stateless - no file I/O) ----------
 
+// 💡 유지보수를 위해 공통으로 들어갈 프롬프트 태그를 위로 빼두었습니다.
+const SDXL_PREFIX = "score_9, score_8_up, score_7_up, rating_explicit, (masterpiece), (best quality), anime style, ";
+const SDXL_NEGATIVE = "low quality, bad anatomy, text, error, blurry, photo, realistic, ugly, deformed, extra limbs";
+
 export async function generateMapImage(
   worldName: string,
   _worldLore: string,
@@ -74,14 +78,16 @@ export async function generateMapImage(
 
   try {
     fal.config({ credentials: falKey })
-    const prompt = `fantasy world map illustration, anime art style, parchment texture, hand-drawn, top-down aerial view, two large continents named ${continents.map(c => c.name).join(' and ')}, mountains, forests, rivers, ocean with decorative waves, compass rose, decorative border, medieval fantasy cartography style, warm golden-brown colors, high quality`
+    // 지도에도 기본 퀄리티 향상을 위해 Prefix 적용
+    const prompt = `${SDXL_PREFIX}fantasy world map illustration, parchment texture, hand-drawn, top-down aerial view, two large continents named ${continents.map(c => c.name).join(' and ')}, mountains, forests, rivers, ocean with decorative waves, compass rose, decorative border, medieval fantasy cartography style, warm golden-brown colors, high quality`
 
-    const result = await fal.subscribe('fal-ai/flux/schnell', {
+    const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
         prompt,
+        negative_prompt: SDXL_NEGATIVE,
         image_size: 'landscape_16_9',
-        num_inference_steps: 4,
-        num_images: 1,
+        num_inference_steps: 25, // SDXL에 맞는 스텝 수
+        enable_safety_checker: false, // 검열 해제
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
@@ -102,16 +108,16 @@ export async function generateNpcPortrait(
 
   try {
     fal.config({ credentials: falKey })
-    // Appearance pinned at start for consistent reference
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
-    const prompt = `anime style, full body character portrait, fantasy RPG character art, ${genderWord}, ${npc.appearance}, ${npc.title}, standing pose, detailed fantasy outfit, consistent character design, clean gradient background, high quality, visual novel character art style`
+    const prompt = `${SDXL_PREFIX}full body character portrait, fantasy RPG character art, ${genderWord}, ${npc.appearance}, ${npc.title}, standing pose, detailed fantasy outfit, consistent character design, clean gradient background, visual novel character art style`
 
-    const result = await fal.subscribe('fal-ai/flux/schnell', {
+    const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
         prompt,
+        negative_prompt: SDXL_NEGATIVE,
         image_size: 'portrait_4_3',
-        num_inference_steps: 4,
-        num_images: 1,
+        num_inference_steps: 25,
+        enable_safety_checker: false, // NSFW 허용
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
@@ -144,16 +150,16 @@ export async function generateNpcEmotion(
       smug: 'smug confident smiling expression',
     }
 
-    // Appearance is pinned first to enforce visual consistency across emotions
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
-    const prompt = `anime style, bust portrait, fantasy character, ${genderWord}, ${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, consistent character design, high quality, visual novel character art style, clean background`
+    const prompt = `${SDXL_PREFIX}bust portrait, fantasy character, ${genderWord}, ${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, consistent character design, visual novel character art style, clean background`
 
-    const result = await fal.subscribe('fal-ai/flux/schnell', {
+    const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
         prompt,
+        negative_prompt: SDXL_NEGATIVE,
         image_size: 'square_hd',
-        num_inference_steps: 4,
-        num_images: 1,
+        num_inference_steps: 25,
+        enable_safety_checker: false, // NSFW 허용
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
@@ -172,14 +178,15 @@ export async function generateSceneImage(sceneDescription: string): Promise<stri
 
   try {
     fal.config({ credentials: falKey })
-    const prompt = `anime style illustration, high quality, 16:9 aspect ratio, fantasy RPG scene, ${sceneDescription}, character-focused composition, one or more characters prominently visible in the foreground, full body or upper body characters in frame, dramatic atmospheric lighting, vibrant detailed colors, cinematic composition, visual novel art style`
+    const prompt = `${SDXL_PREFIX}16:9 aspect ratio, fantasy RPG scene, ${sceneDescription}, character-focused composition, one or more characters prominently visible in the foreground, full body or upper body characters in frame, dramatic atmospheric lighting, vibrant detailed colors, cinematic composition, visual novel art style`
 
-    const result = await fal.subscribe('fal-ai/flux/schnell', {
+    const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
         prompt,
+        negative_prompt: SDXL_NEGATIVE,
         image_size: 'landscape_16_9',
-        num_inference_steps: 4,
-        num_images: 1,
+        num_inference_steps: 25,
+        enable_safety_checker: false, // NSFW 허용
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
