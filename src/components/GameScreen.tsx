@@ -314,7 +314,8 @@ export default function GameScreen() {
     <div className="flex flex-col h-screen" style={{ background: '#05050a' }}>
 
       {/* Top bar: Stats + Menu */}
-      <div className="flex items-stretch" style={{ background: 'rgba(5,5,10,0.95)', borderBottom: '1px solid #1a1020' }}>
+      <div style={{ background: 'rgba(5,5,10,0.95)', borderBottom: '1px solid #1a1020' }}>
+        <div className="lg:max-w-3xl lg:mx-auto flex items-stretch">
         <div className="flex-1 min-w-0">
           <StatsBar />
         </div>
@@ -353,13 +354,15 @@ export default function GameScreen() {
             </div>
           )}
         </div>
+        </div>{/* end lg:max-w-3xl */}
       </div>
 
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">
 
         {/* Messages column */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+        <div className="flex-1 overflow-y-auto">
+        <div className="lg:max-w-3xl lg:mx-auto px-4 py-4 space-y-6">
 
           {messages.map(msg => (
             <MessageBlock key={msg.id} msg={msg} npcs={npcs} />
@@ -402,11 +405,13 @@ export default function GameScreen() {
           )}
 
           <div ref={messagesEndRef} />
-        </div>
+        </div>{/* end lg:max-w-3xl */}
+        </div>{/* end overflow-y-auto */}
       </div>
 
       {/* Input area */}
       <div style={{ borderTop: '1px solid #1a1020', background: 'rgba(5,5,10,0.98)' }}>
+        <div className="lg:max-w-3xl lg:mx-auto">
 
         {/* Quick actions */}
         <div className="px-3 pt-2 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -460,6 +465,7 @@ export default function GameScreen() {
             )}
           </button>
         </div>
+        </div>{/* end lg:max-w-3xl */}
       </div>
     </div>
   )

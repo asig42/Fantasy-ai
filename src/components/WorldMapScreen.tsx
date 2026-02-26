@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { useGameStore } from '../store/gameStore'
-import axios from 'axios'
 
 export default function WorldMapScreen() {
   const { world, npcs, setPhase, mapImageUrl } = useGameStore()
@@ -8,24 +7,13 @@ export default function WorldMapScreen() {
   const [activeContinent, setActiveContinent] = useState<number | null>(null)
   const [imageLoaded, setImageLoaded] = useState(false)
 
-  // Poll for map image
+  // Sync with store when fire-and-forget map generation completes
   useEffect(() => {
-    if (currentMapUrl) return
-
-    const poll = setInterval(async () => {
-      try {
-        const res = await axios.get('/api/game/status/images')
-        if (res.data.mapImageUrl) {
-          setCurrentMapUrl(res.data.mapImageUrl)
-          clearInterval(poll)
-        }
-      } catch {
-        // ignore
-      }
-    }, 3000)
-
-    return () => clearInterval(poll)
-  }, [currentMapUrl])
+    if (mapImageUrl && mapImageUrl !== currentMapUrl) {
+      setCurrentMapUrl(mapImageUrl)
+      setImageLoaded(false)
+    }
+  }, [mapImageUrl, currentMapUrl])
 
   if (!world) return null
 
