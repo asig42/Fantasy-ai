@@ -88,6 +88,7 @@ function PanelContent() {
   const [mapExpanded, setMapExpanded] = useState(false)
   const [backstoryOpen, setBackstoryOpen] = useState(false)
   const [selectedNpc, setSelectedNpc] = useState<NPC | null>(null)
+  const [selectedQuest, setSelectedQuest] = useState<Quest | null>(null)
   if (!character) return null
 
   const s = character.stats
@@ -204,16 +205,78 @@ function PanelContent() {
           <p className="text-xs" style={{ color: 'rgba(160,144,112,0.4)' }}>퀘스트 생성 중...</p>
         ) : (
           <div className="space-y-3">
-            {activeQuests.map(q => <QuestCard key={q.id} quest={q} />)}
+            {activeQuests.map(q => <QuestCard key={q.id} quest={q} onClick={() => setSelectedQuest(q)} />)}
             {doneQuests.length > 0 && (
               <>
                 <div className="h-px" style={{ background: 'rgba(212,175,55,0.1)' }} />
-                {doneQuests.map(q => <QuestCard key={q.id} quest={q} />)}
+                {doneQuests.map(q => <QuestCard key={q.id} quest={q} onClick={() => setSelectedQuest(q)} />)}
               </>
             )}
           </div>
         )}
       </div>
+
+      {/* 퀘스트 상세 모달 */}
+      {selectedQuest && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.85)' }}
+          onClick={() => setSelectedQuest(null)}
+        >
+          <div
+            className="relative max-w-md w-full mx-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="fantasy-panel rounded-sm overflow-hidden">
+              {/* 모달 헤더 */}
+              <div className="px-4 py-3 flex items-center gap-2" style={{ borderBottom: '1px solid rgba(212,175,55,0.15)' }}>
+                <span style={{ color: STATUS_COLOR[selectedQuest.status], fontSize: '10px' }}>◆</span>
+                <span className="font-cinzel text-xs tracking-wider flex-1" style={{ color: 'rgba(212,175,55,0.8)' }}>
+                  {selectedQuest.title}
+                </span>
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{
+                  background: 'rgba(0,0,0,0.4)',
+                  color: STATUS_COLOR[selectedQuest.status],
+                  fontSize: '9px',
+                  border: `1px solid ${STATUS_COLOR[selectedQuest.status]}40`,
+                }}>
+                  {STATUS_LABEL[selectedQuest.status]}
+                </span>
+              </div>
+
+              {/* 설명 */}
+              {selectedQuest.description && (
+                <div className="px-4 py-3" style={{ borderBottom: selectedQuest.objectives.length > 0 ? '1px solid rgba(212,175,55,0.08)' : 'none' }}>
+                  <p className="text-sm leading-relaxed" style={{ color: 'rgba(200,185,155,0.85)', whiteSpace: 'pre-wrap' }}>
+                    {selectedQuest.description}
+                  </p>
+                </div>
+              )}
+
+              {/* 목표 목록 */}
+              {selectedQuest.objectives.length > 0 && (
+                <div className="px-4 py-3">
+                  <p className="font-cinzel text-xs mb-2" style={{ color: 'rgba(212,175,55,0.5)' }}>목표</p>
+                  <ul className="space-y-1.5">
+                    {selectedQuest.objectives.map((obj, i) => (
+                      <li key={i} className="flex items-start gap-2 text-sm" style={{ color: 'rgba(160,144,112,0.75)' }}>
+                        <span style={{ fontSize: '8px', marginTop: '5px', color: STATUS_COLOR[selectedQuest.status], flexShrink: 0 }}>
+                          {selectedQuest.status === 'completed' ? '✓' : '○'}
+                        </span>
+                        <span>{obj}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <button
+              className="absolute -top-3 -right-3 w-7 h-7 rounded-full flex items-center justify-center text-xs"
+              style={{ background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.4)', color: 'rgba(212,175,55,0.8)' }}
+              onClick={() => setSelectedQuest(null)}>✕</button>
+          </div>
+        </div>
+      )}
 
       {/* ── 인물 관계 ── */}
       <div className="fantasy-panel rounded-sm p-3">
@@ -343,9 +406,15 @@ function StatBar({ label, value, max, pct, color }: {
 }
 
 // ── 퀘스트 카드 서브컴포넌트 ─────────────────────────────
-function QuestCard({ quest }: { quest: Quest }) {
+function QuestCard({ quest, onClick }: { quest: Quest; onClick: () => void }) {
   return (
-    <div className="text-xs">
+    <button
+      className="w-full text-left text-xs rounded transition-colors"
+      style={{ cursor: 'pointer' }}
+      onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,175,55,0.05)')}
+      onMouseLeave={e => (e.currentTarget.style.background = '')}
+      onClick={onClick}
+    >
       <div className="flex items-center gap-1.5 mb-1">
         <span style={{ color: STATUS_COLOR[quest.status], fontSize: '8px' }}>◆</span>
         <span className="font-bold truncate" style={{
@@ -354,24 +423,30 @@ function QuestCard({ quest }: { quest: Quest }) {
         }}>
           {quest.title}
         </span>
-        <span className="ml-auto flex-shrink-0 text-xs px-1 rounded" style={{
+        <span className="ml-auto flex-shrink-0 px-1 rounded" style={{
           background: 'rgba(0,0,0,0.3)',
           color: STATUS_COLOR[quest.status],
           fontSize: '9px',
         }}>
           {STATUS_LABEL[quest.status]}
         </span>
+        <span style={{ fontSize: '9px', color: 'rgba(160,144,112,0.35)', flexShrink: 0 }}>▶</span>
       </div>
       {quest.status === 'active' && quest.objectives.length > 0 && (
         <ul className="ml-3 space-y-0.5">
-          {quest.objectives.map((obj, i) => (
+          {quest.objectives.slice(0, 2).map((obj, i) => (
             <li key={i} className="flex items-center gap-1" style={{ color: 'rgba(160,144,112,0.6)' }}>
               <span style={{ fontSize: '8px' }}>○</span>
-              <span>{obj}</span>
+              <span className="truncate">{obj}</span>
             </li>
           ))}
+          {quest.objectives.length > 2 && (
+            <li style={{ color: 'rgba(160,144,112,0.35)', fontSize: '9px', marginLeft: '12px' }}>
+              +{quest.objectives.length - 2}개 더...
+            </li>
+          )}
         </ul>
       )}
-    </div>
+    </button>
   )
 }

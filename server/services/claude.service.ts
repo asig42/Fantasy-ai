@@ -302,23 +302,23 @@ JSON 배열:
 // falling back to truncated content. Allows sending many more turns
 // without blowing up the token budget.
 function buildHistoryText(history: GameMessage[]): string {
-  const recent = history.slice(-30)  // 최근 30개 메시지 (이전: 20)
+  const recent = history.slice(-20)  // 최근 20개 메시지
   return recent.map((m, idx) => {
     if (m.role === 'player') return `[플레이어] ${m.content}`
     const prefix = m.role === 'npc' ? `[${m.npcName || 'NPC'}]` : '[나레이터]'
-    // 최근 5턴은 원문 그대로, 그 이전은 요약 사용 (이전: 3턴)
-    const isRecent = idx >= recent.length - 10
+    // 최근 3턴은 원문 그대로, 그 이전은 요약 사용
+    const isRecent = idx >= recent.length - 6
     const text = isRecent
-      ? (m.summary ? `${m.summary}\n  (장면 원문: ${m.content.slice(0, 300)})` : m.content.slice(0, 400))
-      : (m.summary ?? m.content.slice(0, 200))
+      ? (m.summary ? `${m.summary}\n  (장면 원문: ${m.content.slice(0, 200)})` : m.content.slice(0, 300))
+      : (m.summary ?? m.content.slice(0, 150))
     return `${prefix} ${text}`
   }).join('\n\n')
 }
 
 // The extra JSON fields we ask Claude to return alongside narration
 const GM_JSON_FORMAT = `{
-  "narration": "웹소설 스타일의 서술 (인물의 내면 심리 30%, 환경 및 감각 묘사 40%, 대사 및 행동 30% 비율로 구성, 한국어, 최소 350자)",
-  "summary": "이번 턴 요약 (한국어 2-4문장, 150자 이내): 플레이어 행동, 결과, 등장 NPC와 대화 내용, 발생한 사건, 장소 변화, 획득/손실 정보, 인물간 감정선 변화 등 핵심 맥락을 모두 포함",
+  "narration": "웹소설 스타일의 서술 (인물의 내면 심리 30%, 환경 및 감각 묘사 40%, 대사 및 행동 30% 비율로 구성, 한국어, 최소 200자)",
+  "summary": "이번 턴 요약 (한국어 1-2문장, 100자 이내): 플레이어 행동, 결과, 등장 NPC와 핵심 사건만 간결하게",
   "scene_description": "English description for image generation: lighting, location, atmosphere, characters present, time of day, weather, mood (max 60 words)",
   "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
   "reuse_scene_image": false,
@@ -589,7 +589,7 @@ ${NEW_NPC_RULES}`
 
   const msg = await getClient().messages.create({
     model: selectModel(playerInput, history),
-    max_tokens: 8000,
+    max_tokens: 5000,
     system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
     messages: [{ role: 'user', content: userMessage }],
   })
@@ -630,7 +630,7 @@ ${NEW_NPC_RULES}`
 
   const stream = getClient().messages.stream({
     model: selectModel(playerInput, history),
-    max_tokens: 6000,
+    max_tokens: 5000,
     system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
     messages: [{ role: 'user', content: userMessage }],
   })

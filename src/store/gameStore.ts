@@ -52,8 +52,16 @@ function getInitialStats(characterClass: CharacterClass): CharacterStats {
 // ─── Server session helpers ───────────────────────────────────
 async function saveSessionToServer(session: GameSession) {
   try {
-    await axios.post('/api/session/save', { session }, { timeout: 10000 })
-  } catch { /* ignore - local save is primary */ }
+    await axios.post('/api/session/save', { session }, { timeout: 15000 })
+  } catch (err) {
+    console.warn('[Save] 서버 저장 실패 (로컬 저장은 유지됨):', err instanceof Error ? err.message : err)
+    // Retry once after 3s
+    setTimeout(async () => {
+      try {
+        await axios.post('/api/session/save', { session }, { timeout: 15000 })
+      } catch { /* 2nd attempt failed — local save is primary */ }
+    }, 3000)
+  }
 }
 
 function updateUrlWithSession(sessionId: string) {
@@ -820,25 +828,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
   resumeSessionFromServer: async (sessionId: string) => {
     set({ isLoading: true, error: null })
     try {
-      const [sessionRes, worldRes, npcsRes, narrativeRes] = await Promise.all([
-        axios.get(`/api/session/${sessionId}`, { timeout: 10000 }),
-        axios.get('/api/world', { timeout: 10000 }),
-        axios.get('/api/npcs', { timeout: 10000 }),
-        axios.get('/api/narrative', { timeout: 10000 }),
-      ])
+      // Session data is critical — fetch it first
+      const sessionRes = await axios.get(`/api/session/${sessionId}`, { timeout: 15000 })
       const session: GameSession = sessionRes.data.session
-      const world: WorldData = worldRes.data.world
-      const npcs: NPC[] = npcsRes.data.npcs
-      const narrative: string = narrativeRes.data.narrative
 
-      // Cache in localStorage for this device
-      lsSet(LS_WORLD, world)
-      lsSet(LS_NPCS, npcs)
-      lsSet(LS_NARRATIVE, narrative)
+      // Reuse already-loaded world/npcs/narrative if available (avoids redundant cross-device fetches)
+      const state = get()
+      let world: WorldData | null = state.world ?? lsGet<WorldData>(LS_WORLD)
+      let npcs: NPC[] | null = state.npcs.length > 0 ? state.npcs : lsGet<NPC[]>(LS_NPCS)
+      let narrative: string | null = state.narrative || lsGet<string>(LS_NARRATIVE)
+
+      // Fetch only missing pieces — individually so one failure doesn't block the others
+      const [worldRes, npcsRes, narrativeRes] = await Promise.all([
+        world   ? Promise.resolve(null) : axios.get('/api/world',     { timeout: 15000 }).catch(() => null),
+        npcs    ? Promise.resolve(null) : axios.get('/api/npcs',      { timeout: 15000 }).catch(() => null),
+        narrative ? Promise.resolve(null) : axios.get('/api/narrative', { timeout: 15000 }).catch(() => null),
+      ])
+
+      if (!world && worldRes)       world = worldRes.data.world ?? null
+      if (!npcs && npcsRes)         npcs  = npcsRes.data.npcs ?? []
+      if (!narrative && narrativeRes) narrative = narrativeRes.data.narrative ?? ''
+
+      // Cache to localStorage for this device
+      if (world)    lsSet(LS_WORLD, world)
+      if (npcs)     lsSet(LS_NPCS, npcs)
+      if (narrative) lsSet(LS_NARRATIVE, narrative)
       const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
       sessions[sessionId] = session
       lsSet(LS_SESSIONS, sessions)
       lsSet(LS_LAST_SESSION, sessionId)
+      updateUrlWithSession(sessionId)
 
       set({
         sessionId: session.id,
@@ -847,10 +866,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         currentLocation: session.currentLocation,
         currentScene: session.currentScene ?? null,
         quests: session.quests ?? [],
-        world,
-        npcs,
-        narrative,
-        mapImageUrl: world.mapImageUrl ?? null,
+        world:     world ?? state.world,
+        npcs:      npcs  ?? state.npcs,
+        narrative: narrative ?? state.narrative,
+        mapImageUrl: world?.mapImageUrl ?? state.mapImageUrl ?? null,
         hasApiKey: true,
         phase: 'game',
         isLoading: false,
