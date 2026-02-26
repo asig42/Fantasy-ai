@@ -64,7 +64,7 @@ function placeholderDataUrl(type: 'map' | 'portrait' | 'scene', label: string): 
 // ---------- Main Image Generation Functions (stateless - no file I/O) ----------
 
 // 💡 비주얼 노벨/애니메이션 스타일에 최적화
-const SDXL_PREFIX = "(masterpiece, best quality, highres:1.2), visual novel CG art style, 2d anime illustration, vibrant cinematic lighting, flat color, clear outlines, ";
+const SDXL_PREFIX = "(masterpiece, best quality, highres:1.2), visual novel CG art style, 2d anime illustration, vibrant cinematic lighting, flat color, clear outlines, NSFW, uncensored";
 
 // 💡 실사풍/기괴한 인체 방지
 const ANIMAGINE_NEGATIVE = "(worst quality, low quality, normal quality:1.4), (realistic, photorealistic, 3d, lip, nose:1.3), bad anatomy, bad hands, missing fingers, extra digit, ugly, deformed, text, error, blurry, monochrome";
