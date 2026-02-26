@@ -336,6 +336,12 @@ const GM_JSON_FORMAT = `{
     "experience_gain": 0
   },
   "quest_updates": null
+  "visual_direction": {
+    "focus": "character / environment / intimate / object",
+    "camera_shot": "close-up / bust-up / waist-up / full-body / wide",
+    "lighting": "cinematic / moody / bright / sunset / moonlight / candlelight",
+    "intensity": "routine / dramatic / climax" 
+  },
 }`
 
 // quest_updates 사용 규칙: 퀘스트 변화가 있을 때만 배열로 채움
