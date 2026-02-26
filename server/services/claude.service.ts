@@ -328,7 +328,12 @@ const GM_JSON_FORMAT = `{
   "available_npcs": ["현재 장면에 있는 NPC id 배열"],
   "game_over": false,
   "new_npc": null,
-  "suggested_actions": ["현재 상황에 맞는 행동 제안 1 (10자 이내)", "행동 제안 2 (10자 이내)", "행동 제안 3 (10자 이내)"],
+  "suggested_actions": [
+    "행동 제목 (10자 이내)||현재 상황에 맞는 구체적 방법·결과 설명 (30자 이내, 명사형 종결)",
+    "행동 제목 2||설명 2",
+    "행동 제목 3||설명 3",
+    "행동 제목 4||설명 4"
+  ],
   "stat_changes": {
     "hp_change": 0,
     "mana_change": 0,
@@ -343,6 +348,10 @@ const GM_JSON_FORMAT = `{
     "intensity": "routine / dramatic / climax" 
   },
 }`
+
+// suggested_actions 규칙: 항상 "제목||설명" 형식 (|| 구분자 필수). 제목 10자, 설명 30자 이내. 4가지 제시.
+// 현재 상황·NPC·장소에 맞는 구체적 선택지 (전투 중이면 전투 관련, 대화 중이면 대화 관련, 탐색 중이면 탐색 관련).
+// 예: ["검을 뽑는다||적에게 선제 공격을 가함", "도망친다||뒤를 돌아 전력으로 달림"]
 
 // quest_updates 사용 규칙: 퀘스트 변화가 있을 때만 배열로 채움
 // 예: [{"id":"q1","status":"completed"}, {"id":"new","title":"새 퀘스트","description":"...","status":"active","objectives":["목표1"]}]

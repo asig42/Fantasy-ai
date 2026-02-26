@@ -15,6 +15,18 @@ import type {
   Quest,
 } from '../types/game'
 
+// ─── Class starting skills ────────────────────────────────────
+const CLASS_SKILLS: Record<CharacterClass, string[]> = {
+  '전사':    ['강타', '방어 태세', '전투 의지'],
+  '마법사':  ['파이어볼', '마나 실드', '마법 탐지'],
+  '도적':    ['암습', '잠금 해제', '독 사용'],
+  '성직자':  ['치유', '정화', '신성한 빛'],
+  '사냥꾼':  ['정밀 사격', '함정 설치', '야생 추적'],
+  '연금술사':['폭발 포션 제조', '강화', '약물 분석'],
+  '음유시인':['매혹의 노래', '영웅 서사시', '거짓말 간파'],
+  '팔라딘':  ['신성 강타', '수호 오라', '죄악 탐지'],
+}
+
 // ─── Class-based initial stats ────────────────────────────────
 function getInitialStats(characterClass: CharacterClass): CharacterStats {
   const classStats: Record<CharacterClass, { hp: number; mana: number }> = {
@@ -427,6 +439,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       background: data.backstory,
       backstory: data.backstory,
       stats: getInitialStats(data.characterClass),
+      skills: CLASS_SKILLS[data.characterClass] ?? [],
+      inventory: [],
     }
     const sessionId = uuidv4()
 
@@ -591,6 +605,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
             return {
               npcPortraitCache: { ...state.npcPortraitCache, [cacheKey]: portraitUrl },
               npcs: state.npcs.map(n => n.id === npcId ? { ...n, portraitUrl } : n),
+              // Backfill portrait into messages created before async portrait arrived
+              messages: state.messages.map(m =>
+                m.npcId === npcId && m.npcEmotion === emotion && !m.npcPortraitUrl
+                  ? { ...m, npcPortraitUrl: portraitUrl }
+                  : m
+              ),
             }
           })
         } else if (data.type === 'done') {

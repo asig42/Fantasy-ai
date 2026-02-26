@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useGameStore } from '../store/gameStore'
 import type { Quest } from '../types/game'
 
@@ -23,7 +24,8 @@ interface Props {
 
 // ── 공통 패널 콘텐츠 ──────────────────────────────────────
 function PanelContent() {
-  const { character, currentLocation, quests, messages, npcs } = useGameStore()
+  const { character, currentLocation, quests, messages, npcs, mapImageUrl, world } = useGameStore()
+  const [mapExpanded, setMapExpanded] = useState(false)
   if (!character) return null
 
   const s = character.stats
@@ -38,6 +40,26 @@ function PanelContent() {
 
   return (
     <div className="flex flex-col gap-3 p-3">
+
+      {/* ── 세계 지도 ── */}
+      {mapImageUrl && (
+        <div className="fantasy-panel rounded-sm overflow-hidden">
+          <button className="w-full text-left relative block" onClick={() => setMapExpanded(v => !v)}>
+            <img
+              src={mapImageUrl}
+              alt={`${world?.name ?? ''} 지도`}
+              className="w-full object-cover"
+              style={{ height: mapExpanded ? '180px' : '72px', transition: 'height 0.3s ease', objectPosition: 'center' }}
+            />
+            <div className="absolute inset-0 flex items-end p-1.5"
+              style={{ background: 'linear-gradient(to top, rgba(5,5,10,0.85) 0%, transparent 55%)' }}>
+              <span className="font-cinzel" style={{ fontSize: '10px', color: 'rgba(212,175,55,0.8)' }}>
+                🗺 {world?.name ?? '세계 지도'} {mapExpanded ? '▲' : '▼'}
+              </span>
+            </div>
+          </button>
+        </div>
+      )}
 
       {/* ── 캐릭터 기본 정보 ── */}
       <div className="fantasy-panel rounded-sm p-3">
