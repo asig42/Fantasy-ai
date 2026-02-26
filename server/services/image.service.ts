@@ -1,5 +1,5 @@
 import { fal } from '@fal-ai/client'
-import type { VisualDirection, NPC } from '../../src/types/game'
+import type { VisualDirection, NPC, PlayerCharacter } from '../../src/types/game'
 
 // Configure fal.ai if key is available
 if (process.env.FAL_KEY) {
@@ -64,8 +64,9 @@ function placeholderDataUrl(type: 'map' | 'portrait' | 'scene', label: string): 
 // ---------- Main Image Generation Functions (stateless - no file I/O) ----------
 
 // 💡 유지보수를 위해 공통으로 들어갈 프롬프트 태그를 위로 빼두었습니다.
-const SDXL_PREFIX = "score_9, score_8_up, score_7_up, rating_explicit, (masterpiece), (best quality), anime style, vibrant cinematic lighting, ";
-const SDXL_NEGATIVE = "low quality, bad anatomy, text, error, blurry, photo, realistic, ugly, deformed, extra limbs, lowres, monochrome";
+const SDXL_PREFIX = "score_9, score_8_up, score_7_up, rating_explicit, (masterpiece), (best quality), anime style, (medieval fantasy), (high fantasy), sword and sorcery, european medieval setting, vibrant cinematic lighting, ";
+// 부정 태그: 현대/미래/공상과학 요소 철저히 제거
+const SDXL_NEGATIVE = "low quality, bad anatomy, text, error, blurry, photo, ugly, deformed, extra limbs, lowres, monochrome, science fiction, futuristic, sci-fi, modern, contemporary, spaceship, robot, firearm, gun, pistol, technology, neon lights, cyberpunk, 21st century, skyscraper, car, computer, electricity pole, modern architecture, child, loli, shota, infant, baby face, young child";
 
 function determineComposition(description: string): string {
   const desc = description.toLowerCase();
@@ -122,7 +123,7 @@ export async function generateMapImage(
 }
 
 export async function generateNpcPortrait(
-  npc: { name: string; title: string; appearance: string; gender: string }
+  npc: { name: string; title: string; appearance: string; gender: string; age?: number }
 ): Promise<string> {
   const falKey = process.env.FAL_KEY
   if (!falKey) {
@@ -132,7 +133,8 @@ export async function generateNpcPortrait(
   try {
     fal.config({ credentials: falKey })
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
-    const prompt = `${SDXL_PREFIX}full body character portrait, fantasy RPG character art, ${genderWord}, ${npc.appearance}, ${npc.title}, standing pose, detailed fantasy outfit, consistent character design, clean gradient background, visual novel character art style`
+    const ageDesc = npc.age ? `${npc.age} years old, ` : ''
+    const prompt = `${SDXL_PREFIX}full body character portrait, (medieval fantasy), fantasy RPG character art, ${genderWord}, ${ageDesc}${npc.appearance}, ${npc.title}, standing pose, detailed medieval fantasy outfit, consistent character design, clean gradient background, visual novel character art style`
 
     const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
@@ -152,7 +154,7 @@ export async function generateNpcPortrait(
 }
 
 export async function generateNpcEmotion(
-  npc: { name: string; appearance: string; gender: string },
+  npc: { name: string; appearance: string; gender: string; age?: number },
   emotion: string,
   emotionDescription: string
 ): Promise<string> {
@@ -174,7 +176,8 @@ export async function generateNpcEmotion(
     }
 
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
-    const prompt = `${SDXL_PREFIX}bust portrait, fantasy character, ${genderWord}, ${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, consistent character design, visual novel character art style, clean background`
+    const ageDesc = npc.age ? `${npc.age} years old, ` : ''
+    const prompt = `${SDXL_PREFIX}bust portrait, (medieval fantasy), fantasy character, ${genderWord}, ${ageDesc}${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, consistent character design, visual novel character art style, clean background`
 
     const result = await fal.subscribe('fal-ai/fast-sdxl', {
       input: {
@@ -213,7 +216,8 @@ const FOCUS_TAGS: Record<NonNullable<VisualDirection['focus']>, string> = {
 export async function generateEnhancedSceneImage(
   sceneDescription: string,
   direction?: VisualDirection | null,
-  activeNpcs?: NPC[]
+  activeNpcs?: NPC[],
+  heroAppearance?: string
 ): Promise<string> {
   const falKey = process.env.FAL_KEY
   if (!falKey) return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
@@ -221,9 +225,12 @@ export async function generateEnhancedSceneImage(
   try {
     fal.config({ credentials: falKey })
 
-    // ── NPC 외모를 프롬프트에 반영해 시각적 일관성 유지 ──
+    // ── NPC 나이와 외모를 프롬프트에 반영해 시각적 일관성 유지 ──
     const npcAppearance = activeNpcs && activeNpcs.length > 0
-      ? activeNpcs.map(n => n.appearance).filter(Boolean).join(', ')
+      ? activeNpcs
+          .map(n => `${n.age ? `${n.age}yo ` : ''}${n.appearance}`)
+          .filter(Boolean)
+          .join(', ')
       : ''
 
     // ── visual_direction 지시값 → 프롬프트 구성 요소 결정 ──
@@ -244,9 +251,11 @@ export async function generateEnhancedSceneImage(
     // ── 최종 프롬프트 조합 ──
     const promptParts = [
       SDXL_PREFIX,
+      '(medieval fantasy setting:1.3)',
       composition,
       focusTags,
       lightingTag,
+      heroAppearance,
       npcAppearance,
       sceneDescription,
       intensityTag,

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import * as claude from '../services/claude.service'
 import * as imageService from '../services/image.service'
+import { buildHeroAppearance } from '../services/claude.service'
 import {
   saveConfig,
   saveWorld, loadWorld,
@@ -221,10 +222,12 @@ router.post('/session/create', async (req: Request, res: Response) => {
 
   try {
     const initialResponse = await claude.generateInitialScene(worldData, narrative, character)
+    const heroApp = buildHeroAppearance(character)
     const sceneImageUrl = await imageService.generateEnhancedSceneImage(
       initialResponse.scene_description,
       initialResponse.visual_direction ?? null,
-      []  // 초기 장면엔 아직 NPC 없음
+      [],  // 초기 장면엔 아직 NPC 없음
+      heroApp
     )
 
     res.json({
@@ -356,12 +359,14 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
       const sceneNpcs = (response.available_npcs ?? [])
         .map((id: string) => allNpcs.find(n => n.id === id))
         .filter((n): n is NPC => !!n)
+      const heroApp = character ? buildHeroAppearance(character) : undefined
 
       pendingTasks.push(
         imageService.generateEnhancedSceneImage(
           response.scene_description,
           response.visual_direction ?? null,
-          sceneNpcs
+          sceneNpcs,
+          heroApp
         )
           .then(url => { sendEvent({ type: 'image', sceneImageUrl: url, sceneTag }) })
           .catch(err => {
@@ -442,11 +447,13 @@ router.post('/game/action', async (req: Request, res: Response) => {
       const sceneNpcs = (response.available_npcs ?? [])
         .map((id: string) => allNpcsForImage.find(n => n.id === id))
         .filter((n): n is NPC => !!n)
+      const heroApp = character ? buildHeroAppearance(character) : undefined
 
       sceneImageUrl = await imageService.generateEnhancedSceneImage(
         response.scene_description,
         response.visual_direction ?? null,
-        sceneNpcs
+        sceneNpcs,
+        heroApp
       )
       console.log(`[Image] Generated new scene: ${sceneTag}`)
     }

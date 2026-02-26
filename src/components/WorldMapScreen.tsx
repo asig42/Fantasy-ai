@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react'
 import { useGameStore } from '../store/gameStore'
 
 export default function WorldMapScreen() {
-  const { world, npcs, setPhase, mapImageUrl } = useGameStore()
+  const { world, npcs, setPhase, mapImageUrl, loadingSteps } = useGameStore()
   const [currentMapUrl, setCurrentMapUrl] = useState(mapImageUrl)
   const [activeContinent, setActiveContinent] = useState<number | null>(null)
   const [imageLoaded, setImageLoaded] = useState(false)
+
+  const mapStep = loadingSteps.find(s => s.id === 'map')
+  const isMapGenerating = mapStep?.status === 'loading' || mapStep?.status === 'pending'
 
   // Sync with store when fire-and-forget map generation completes
   useEffect(() => {
@@ -50,12 +53,26 @@ export default function WorldMapScreen() {
             />
           ) : null}
 
-          {/* Placeholder while generating */}
-          <div className={`absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-500 ${imageLoaded ? 'opacity-0' : 'opacity-100'}`}
-            style={{ background: 'linear-gradient(135deg, #1a3a4a, #0a1a2a)' }}>
-            <div className="loading-rune mb-4" />
-            <p className="text-xs" style={{ color: 'rgba(212,175,55,0.6)' }}>지도를 그리는 중...</p>
-          </div>
+          {/* Placeholder / loading overlay */}
+          {(!imageLoaded) && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center transition-opacity duration-500"
+              style={{ background: 'linear-gradient(135deg, #1a3a4a, #0a1a2a)' }}>
+              {(isMapGenerating && !currentMapUrl) ? (
+                <>
+                  <div className="loading-rune mb-4" />
+                  <p className="text-xs" style={{ color: 'rgba(212,175,55,0.6)' }}>지도를 그리는 중...</p>
+                </>
+              ) : currentMapUrl ? (
+                <div className="loading-rune mb-4" />
+              ) : (
+                <>
+                  <p className="text-2xl mb-3">🗺</p>
+                  <p className="text-xs" style={{ color: 'rgba(212,175,55,0.5)' }}>{world?.name ?? '세계 지도'}</p>
+                  <p className="text-xs mt-1" style={{ color: 'rgba(160,144,112,0.4)' }}>지도 이미지를 불러올 수 없습니다</p>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Overlay location labels */}
           <div className="absolute bottom-4 left-4 right-4 flex flex-wrap gap-2 pointer-events-none">

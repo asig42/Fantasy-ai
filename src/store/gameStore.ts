@@ -339,17 +339,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ narrative })
       setStep('narrative', 'done')
 
-      // Step 4: Map image (optional, fire-and-forget if fal.ai available)
+      // Step 4: Map image — skip if already cached in world
       setStep('map', 'loading')
-      axios.post('/api/map/generate', { world })
-        .then(res => {
-          const mapImageUrl: string = res.data.mapImageUrl
-          const updatedWorld = { ...world, mapImageUrl }
-          lsSet(LS_WORLD, updatedWorld)
-          set({ world: updatedWorld, mapImageUrl })
-          setStep('map', 'done')
-        })
-        .catch(() => setStep('map', 'error'))
+      if (world.mapImageUrl) {
+        set({ mapImageUrl: world.mapImageUrl })
+        setStep('map', 'done')
+      } else {
+        axios.post('/api/map/generate', { world })
+          .then(res => {
+            const mapImageUrl: string = res.data.mapImageUrl
+            const updatedWorld = { ...world, mapImageUrl }
+            lsSet(LS_WORLD, updatedWorld)
+            set({ world: updatedWorld, mapImageUrl })
+            setStep('map', 'done')
+          })
+          .catch(() => setStep('map', 'error'))
+      }
 
       set({ isLoading: false, phase: 'worldmap' })
     } catch (err: unknown) {

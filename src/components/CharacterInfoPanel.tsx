@@ -1,6 +1,66 @@
 import { useState } from 'react'
 import { useGameStore } from '../store/gameStore'
-import type { Quest } from '../types/game'
+import type { Quest, NPC } from '../types/game'
+
+// ── 이미지 확대 모달 ───────────────────────────────────────
+function ImageModal({ src, name, onClose }: { src: string; name: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.85)' }}
+      onClick={onClose}
+    >
+      <div
+        className="relative max-w-lg w-full mx-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="fantasy-panel rounded-sm overflow-hidden">
+          <img src={src} alt={name}
+            className="w-full object-contain"
+            style={{ maxHeight: '70vh' }} />
+          <div className="px-3 py-2 text-center">
+            <span className="font-cinzel text-xs" style={{ color: 'rgba(212,175,55,0.8)' }}>{name}</span>
+          </div>
+        </div>
+        <button
+          className="absolute -top-3 -right-3 w-7 h-7 rounded-full flex items-center justify-center text-xs"
+          style={{ background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.4)', color: 'rgba(212,175,55,0.8)' }}
+          onClick={onClose}>✕</button>
+      </div>
+    </div>
+  )
+}
+
+// ── 텍스트 확장 모달 ──────────────────────────────────────
+function TextModal({ title, content, onClose }: { title: string; content: string; onClose: () => void }) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.85)' }}
+      onClick={onClose}
+    >
+      <div
+        className="relative max-w-md w-full mx-4"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="fantasy-panel rounded-sm overflow-hidden">
+          <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(212,175,55,0.15)' }}>
+            <span className="font-cinzel text-xs tracking-wider" style={{ color: 'rgba(212,175,55,0.8)' }}>{title}</span>
+          </div>
+          <div className="px-4 py-4">
+            <p className="text-sm leading-relaxed" style={{ color: 'rgba(200,185,155,0.85)', whiteSpace: 'pre-wrap' }}>
+              {content}
+            </p>
+          </div>
+        </div>
+        <button
+          className="absolute -top-3 -right-3 w-7 h-7 rounded-full flex items-center justify-center text-xs"
+          style={{ background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.4)', color: 'rgba(212,175,55,0.8)' }}
+          onClick={onClose}>✕</button>
+      </div>
+    </div>
+  )
+}
 
 const CLASS_EMOJI: Record<string, string> = {
   '전사': '⚔', '마법사': '🔮', '도적': '🗡', '성직자': '✝',
@@ -26,6 +86,8 @@ interface Props {
 function PanelContent() {
   const { character, currentLocation, quests, messages, npcs, mapImageUrl, world } = useGameStore()
   const [mapExpanded, setMapExpanded] = useState(false)
+  const [backstoryOpen, setBackstoryOpen] = useState(false)
+  const [selectedNpc, setSelectedNpc] = useState<NPC | null>(null)
   if (!character) return null
 
   const s = character.stats
@@ -105,17 +167,33 @@ function PanelContent() {
         </div>
       </div>
 
-      {/* ── 배경 이야기 ── */}
-      <div className="fantasy-panel rounded-sm p-3">
-        <h3 className="font-cinzel text-xs mb-1.5 tracking-wider" style={{ color: 'rgba(212,175,55,0.7)' }}>
+      {/* ── 배경 이야기 (클릭하면 전체 보기) ── */}
+      <button
+        className="w-full text-left fantasy-panel rounded-sm p-3 transition-colors"
+        style={{ cursor: 'pointer' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(212,175,55,0.06)')}
+        onMouseLeave={e => (e.currentTarget.style.background = '')}
+        onClick={() => setBackstoryOpen(true)}
+      >
+        <h3 className="font-cinzel text-xs mb-1.5 tracking-wider flex items-center gap-1" style={{ color: 'rgba(212,175,55,0.7)' }}>
           📖 배경
+          <span style={{ fontSize: '9px', color: 'rgba(212,175,55,0.4)', marginLeft: 'auto' }}>클릭하여 전체 보기 ▶</span>
         </h3>
         <p className="text-xs leading-relaxed" style={{ color: 'rgba(200,185,155,0.75)' }}>
           {character.backstory.length > 140
             ? character.backstory.slice(0, 140) + '...'
             : character.backstory}
         </p>
-      </div>
+      </button>
+
+      {/* 배경 스토리 전체 모달 */}
+      {backstoryOpen && (
+        <TextModal
+          title={`📖 ${character.name}의 배경 이야기`}
+          content={character.backstory}
+          onClose={() => setBackstoryOpen(false)}
+        />
+      )}
 
       {/* ── 활성 퀘스트 ── */}
       <div className="fantasy-panel rounded-sm p-3">
@@ -148,16 +226,20 @@ function PanelContent() {
           <div className="space-y-2">
             {appearedNpcs.map(npc => npc && (
               <div key={npc.id} className="flex items-start gap-2">
-                <div className="flex-shrink-0 w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-sm"
-                  style={{ background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)' }}>
+                <button
+                  className="flex-shrink-0 w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-sm transition-opacity"
+                  style={{ background: 'rgba(212,175,55,0.08)', border: '1px solid rgba(212,175,55,0.2)', cursor: npc.portraitUrl ? 'pointer' : 'default' }}
+                  onClick={() => npc.portraitUrl && setSelectedNpc(npc)}
+                  title={npc.portraitUrl ? '클릭하여 사진 확대' : undefined}
+                >
                   {npc.portraitUrl
                     ? <img src={npc.portraitUrl} alt={npc.name}
                         className="w-full h-full object-cover" style={{ objectPosition: 'top' }} />
-                    : '👤'}
-                </div>
+                    : <span>👤</span>}
+                </button>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-bold truncate" style={{ color: 'rgba(232,213,176,0.9)' }}>{npc.name}</p>
-                  <p className="text-xs truncate" style={{ color: 'rgba(160,144,112,0.6)' }}>{npc.title}</p>
+                  <p className="text-xs truncate" style={{ color: 'rgba(160,144,112,0.6)' }}>{npc.title}{npc.age ? ` · ${npc.age}세` : ''}</p>
                   {npc.relationshipToPlayer && (
                     <p className="mt-0.5" style={{ color: 'rgba(160,144,112,0.5)', fontSize: '10px' }}>
                       {npc.relationshipToPlayer}
@@ -168,6 +250,15 @@ function PanelContent() {
             ))}
           </div>
         )}
+
+      {/* NPC 초상화 확대 모달 */}
+      {selectedNpc?.portraitUrl && (
+        <ImageModal
+          src={selectedNpc.portraitUrl}
+          name={`${selectedNpc.title} ${selectedNpc.name}`}
+          onClose={() => setSelectedNpc(null)}
+        />
+      )}
       </div>
 
     </div>

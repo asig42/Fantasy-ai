@@ -302,15 +302,15 @@ JSON 배열:
 // falling back to truncated content. Allows sending many more turns
 // without blowing up the token budget.
 function buildHistoryText(history: GameMessage[]): string {
-  const recent = history.slice(-20)
+  const recent = history.slice(-30)  // 최근 30개 메시지 (이전: 20)
   return recent.map((m, idx) => {
     if (m.role === 'player') return `[플레이어] ${m.content}`
     const prefix = m.role === 'npc' ? `[${m.npcName || 'NPC'}]` : '[나레이터]'
-    // 최근 3턴(나레이터)은 원문 그대로, 그 이전은 요약 사용
-    const isRecent = idx >= recent.length - 6
+    // 최근 5턴은 원문 그대로, 그 이전은 요약 사용 (이전: 3턴)
+    const isRecent = idx >= recent.length - 10
     const text = isRecent
-      ? (m.summary ? `${m.summary}\n  (장면: ${m.content.slice(0, 200)})` : m.content.slice(0, 300))
-      : (m.summary ?? m.content.slice(0, 150))
+      ? (m.summary ? `${m.summary}\n  (장면 원문: ${m.content.slice(0, 300)})` : m.content.slice(0, 400))
+      : (m.summary ?? m.content.slice(0, 200))
     return `${prefix} ${text}`
   }).join('\n\n')
 }
@@ -352,6 +352,12 @@ const GM_JSON_FORMAT = `{
 // suggested_actions 규칙: 항상 "제목||설명" 형식 (|| 구분자 필수). 제목 10자, 설명 30자 이내. 4가지 제시.
 // 현재 상황·NPC·장소에 맞는 구체적 선택지 (전투 중이면 전투 관련, 대화 중이면 대화 관련, 탐색 중이면 탐색 관련).
 // 예: ["검을 뽑는다||적에게 선제 공격을 가함", "도망친다||뒤를 돌아 전력으로 달림"]
+
+// visual_direction 규칙:
+// - camera_shot 기본값: 특별한 이유 없으면 "bust-up" 또는 "full-body" 사용
+// - "close-up"은 오직 intensity가 "climax"일 때만 허용 (일반 대화·일상 장면에서 클로즈업 금지)
+// - focus: 장소 이동/탐험 시 "environment", 전투/감정 폭발 시 "character", 은밀한 대화 시 "intimate"
+// - intensity: 일상/대화="routine", 긴장/갈등="dramatic", 절정/전투클라이맥스="climax"
 
 // quest_updates 사용 규칙: 퀘스트 변화가 있을 때만 배열로 채움
 // 예: [{"id":"q1","status":"completed"}, {"id":"new","title":"새 퀘스트","description":"...","status":"active","objectives":["목표1"]}]
@@ -416,13 +422,31 @@ function npcToneHint(n: NPC): string {
   return '중립적·사무적.'
 }
 
+// Derive a consistent visual description for the protagonist (used in image prompts)
+export function buildHeroAppearance(character: PlayerCharacter): string {
+  const genderWord = character.gender === '여성' ? 'female' : 'male'
+  const classAppearance: Record<string, string> = {
+    '전사':    'warrior, armored, strong build, battle-worn',
+    '마법사':  'mage, robes, mystical accessories, sharp eyes',
+    '도적':    'rogue, dark leather armor, nimble, hooded',
+    '성직자':  'cleric, holy vestments, gentle demeanor',
+    '사냥꾼':  'ranger, earth-toned cloak, bow, alert gaze',
+    '연금술사':'alchemist, practical coat with pouches, goggles',
+    '음유시인':'bard, colorful attire, lute, charismatic smile',
+    '팔라딘':  'paladin, shining armor, holy symbol',
+  }
+  const classDesc = classAppearance[character.characterClass] ?? 'adventurer'
+  return `${genderWord}, age ${character.age}, ${classDesc}, medieval fantasy protagonist`
+}
+
 function buildSystemPrompt(
   world: WorldData, npcs: NPC[], narrative: string,
   character: PlayerCharacter, currentLocation: string
 ): string {
   const npcSummary = npcs.map(n =>
-    `- ID: ${n.id} | ${n.title} ${n.name} | 외모: ${n.appearance} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment} | 말투: ${npcToneHint(n)}`
+    `- ID: ${n.id} | ${n.title} ${n.name} | 나이: ${n.age}세 | 외모: ${n.appearance} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment} | 말투: ${npcToneHint(n)}`
   ).join('\n')
+  const heroAppearance = buildHeroAppearance(character)
 
   const s = character.stats
   const hpPct = Math.round((s.hp / s.maxHp) * 100)
@@ -462,13 +486,21 @@ ${npcSummary}
 ## 메인 서사
 ${narrative.slice(0, 500)}...
 
+## 언어 규칙 (절대 준수)
+- 모든 나레이션과 NPC 대사는 반드시 **한국어**로만 작성하세요
+- 일본어(ひらがな、カタカナ、漢字), 중국어(简体字、繁体字)는 **절대 사용 금지**
+- scene_description 필드만 예외적으로 영어 사용 (이미지 생성용)
+
+## 주인공 외모 (이미지 일관성용)
+주인공 설명 (scene_description에 항상 포함): ${heroAppearance}
+
 ## 게임 규칙
 - 웹소설/라이트노벨 스타일로 4-6문단의 몰입감 있는 서술을 작성하세요
 - 대사는 큰따옴표 "로 표시하세요
 - 플레이어 행동에 논리적으로 반응하세요
 - NPC의 성격과 성향에 맞게 행동시키세요
-- 세계관의 일관성을 유지하세요
-- scene_description은 영어로 작성하세요 (이미지 생성용)
+- 세계관의 일관성을 유지하세요 (중세 판타지 세계 - 현대/미래 기술 요소 절대 금지)
+- scene_description은 영어로 작성하고, 반드시 "medieval fantasy" 키워드 포함하세요
 - 반드시 유효한 JSON만 반환하세요
 
 ## NPC 페르소나 일관성 규칙 (매우 중요)

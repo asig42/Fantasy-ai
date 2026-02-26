@@ -29,7 +29,7 @@ function SceneImage({ url, alt, pending }: { url?: string; alt: string; pending?
     )
   }
 
-  const isSvg = url.endsWith('.svg')
+  const isSvg = url.startsWith('data:image/svg') || url.endsWith('.svg')
 
   return (
     <div className="scene-image-container"
@@ -58,9 +58,24 @@ function SceneImage({ url, alt, pending }: { url?: string; alt: string; pending?
           <div className="loading-rune" />
         </div>
       )}
+      {/* 이미지 로드 실패 시 안내 */}
+      {error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+          style={{ background: 'linear-gradient(135deg, #0f0f1e 0%, #1a0a2e 50%, #0a0a0f 100%)' }}>
+          <span className="text-2xl">🖼</span>
+          <p className="text-xs text-center px-4" style={{ color: 'rgba(212,175,55,0.5)' }}>
+            이미지를 불러올 수 없습니다
+          </p>
+          <p className="text-xs text-center px-4" style={{ color: 'rgba(160,144,112,0.35)' }}>
+            (fal.ai 키 미설정 또는 생성 실패)
+          </p>
+        </div>
+      )}
       {/* Gradient overlay at bottom */}
-      <div className="absolute bottom-0 left-0 right-0 h-24 pointer-events-none"
-        style={{ background: 'linear-gradient(to top, rgba(5,5,8,0.9), transparent)' }} />
+      {!error && (
+        <div className="absolute bottom-0 left-0 right-0 h-24 pointer-events-none"
+          style={{ background: 'linear-gradient(to top, rgba(5,5,8,0.9), transparent)' }} />
+      )}
     </div>
   )
 }
@@ -490,7 +505,11 @@ export default function GameScreen() {
                   (e.currentTarget as HTMLElement).style.borderColor = 'rgba(61,46,26,0.5)'
                   ;(e.currentTarget as HTMLElement).style.background = 'rgba(212,175,55,0.05)'
                 }}
-                onClick={() => setInput(label)}
+                onClick={() => {
+                  // detail이 있으면 detail 텍스트를, 없으면 label을 입력창에 넣음
+                  setInput(detail || label)
+                  inputRef.current?.focus()
+                }}
                 disabled={isProcessing}>
                 <div className="text-xs font-bold whitespace-nowrap" style={{ color: 'rgba(212,175,55,0.9)', lineHeight: 1.3 }}>{label}</div>
                 {detail && (
