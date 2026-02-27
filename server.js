@@ -10,6 +10,69 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const client = new Anthropic();
 
+function normalizeEnum(value, allowed, fallback) {
+  if (typeof value !== 'string') return fallback;
+  const v = value.trim().toLowerCase();
+  return allowed.includes(v) ? v : fallback;
+}
+
+function normalizeScene(scene) {
+  const defaults = {
+    location: '이름 없는 장소',
+    locationType: 'field',
+    timeOfDay: 'morning',
+    weather: 'clear',
+    mood: 'mysterious'
+  };
+
+  if (!scene || typeof scene !== 'object') return defaults;
+
+  let location = typeof scene.location === 'string' ? scene.location.trim() : defaults.location;
+  let locationType = typeof scene.locationType === 'string' ? scene.locationType.trim().toLowerCase() : '';
+  let timeOfDay = typeof scene.timeOfDay === 'string' ? scene.timeOfDay.trim().toLowerCase() : '';
+  let weather = typeof scene.weather === 'string' ? scene.weather.trim().toLowerCase() : '';
+  let mood = typeof scene.mood === 'string' ? scene.mood.trim().toLowerCase() : '';
+
+  // Guard against malformed LLM output like "afternoon, clear, Bernhardt Guild Hall"
+  // ending up in a single field.
+  const merged = [location, locationType, timeOfDay, weather, mood].join(',');
+  const parts = merged.split(',').map(p => p.trim()).filter(Boolean);
+
+  if (!timeOfDay) {
+    const found = parts.find(p => ['dawn','morning','afternoon','evening','night'].includes(p.toLowerCase()));
+    if (found) timeOfDay = found.toLowerCase();
+  }
+  if (!weather) {
+    const found = parts.find(p => ['clear','cloudy','rain','snow','storm','fog'].includes(p.toLowerCase()));
+    if (found) weather = found.toLowerCase();
+  }
+  if (!locationType) {
+    const found = parts.find(p => ['forest','castle','town','dungeon','field','mountain','port','temple','cave','road'].includes(p.toLowerCase()));
+    if (found) locationType = found.toLowerCase();
+  }
+  if (!mood) {
+    const found = parts.find(p => ['peaceful','tense','mysterious','battle','romantic','sad','joyful','dark'].includes(p.toLowerCase()));
+    if (found) mood = found.toLowerCase();
+  }
+
+  // If location looks like a CSV of scene props, keep only a readable place text.
+  if (location.includes(',')) {
+    const candidates = location
+      .split(',')
+      .map(p => p.trim())
+      .filter(p => p && !['dawn','morning','afternoon','evening','night','clear','cloudy','rain','snow','storm','fog','forest','castle','town','dungeon','field','mountain','port','temple','cave','road','peaceful','tense','mysterious','battle','romantic','sad','joyful','dark'].includes(p.toLowerCase()));
+    if (candidates.length > 0) location = candidates[candidates.length - 1];
+  }
+
+  return {
+    location: location || defaults.location,
+    locationType: normalizeEnum(locationType, ['forest','castle','town','dungeon','field','mountain','port','temple','cave','road'], defaults.locationType),
+    timeOfDay: normalizeEnum(timeOfDay, ['dawn','morning','afternoon','evening','night'], defaults.timeOfDay),
+    weather: normalizeEnum(weather, ['clear','cloudy','rain','snow','storm','fog'], defaults.weather),
+    mood: normalizeEnum(mood, ['peaceful','tense','mysterious','battle','romantic','sad','joyful','dark'], defaults.mood)
+  };
+}
+
 // In-memory game state per session (simple approach)
 const gameSessions = new Map();
 
@@ -370,6 +433,7 @@ ${emotionContext}
     });
 
     const gameData = JSON.parse(response.content[0].text);
+    gameData.scene = normalizeScene(gameData.scene);
 
     // Save emotion for reuse
     const emotionKey = gameData.emotion.primary;
