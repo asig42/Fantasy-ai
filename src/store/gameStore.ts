@@ -515,14 +515,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
         worldData: world,
         narrative,
       }, { timeout: 90000, headers: buildApiHeaders() })
-      const { initialNarration, sceneImageUrl, currentLocation } = res.data
+
+      const {
+        initialNarration,
+        currentLocation,
+        weather,
+        sceneImagePending,
+        initialScene,
+      } = res.data as {
+        initialNarration: string
+        currentLocation: string
+        weather?: string | null
+        sceneImagePending?: boolean
+        initialScene?: {
+          sceneDescription: string
+          visualDirection?: string | null
+        }
+      }
 
       const firstMessage: GameMessage = {
         id: 'msg_initial',
         role: 'narrator',
         content: initialNarration,
         timestamp: Date.now(),
-        sceneImageUrl: sceneImageUrl ?? undefined,
+        sceneImagePending: sceneImagePending || undefined,
       }
 
       const session: GameSession = {
@@ -530,12 +546,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         character,
         messages: [firstMessage],
         currentLocation,
-        currentScene: sceneImageUrl ? {
+        currentScene: {
           description: '',
-          imageUrl: sceneImageUrl,
+          imageUrl: undefined,
           currentLocation,
           npcsPresent: [],
-        } : undefined,
+        },
         quests: get().quests,
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -550,8 +566,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
         messages: [firstMessage],
         currentLocation,
         currentScene: session.currentScene ?? null,
+        weather: weather ?? null,
         isProcessing: false,
       })
+
+      if (initialScene?.sceneDescription) {
+        axios.post('/api/session/initial-image', {
+          sceneDescription: initialScene.sceneDescription,
+          visualDirection: initialScene.visualDirection ?? null,
+          currentLocation,
+          weather: weather ?? null,
+          character,
+        }, { timeout: 120000, headers: buildApiHeaders() })
+          .then(imgRes => {
+            const sceneImageUrl = imgRes.data?.sceneImageUrl as string | undefined
+            if (!sceneImageUrl) throw new Error('empty image url')
+            set(state => ({
+              messages: state.messages.map(m =>
+                m.id === firstMessage.id ? { ...m, sceneImageUrl, sceneImagePending: false } : m
+              ),
+              currentScene: state.currentScene
+                ? { ...state.currentScene, imageUrl: sceneImageUrl }
+                : { description: '', imageUrl: sceneImageUrl, currentLocation, npcsPresent: [] },
+            }))
+          })
+          .catch(() => {
+            set(state => ({
+              messages: state.messages.map(m =>
+                m.id === firstMessage.id ? { ...m, sceneImagePending: false } : m
+              ),
+            }))
+          })
+      }
 
       get().loadSessions()
     } catch (err: unknown) {
