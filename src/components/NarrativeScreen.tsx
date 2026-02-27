@@ -37,7 +37,7 @@ function TypewriterText({ text, speed = 25, onDone }: { text: string; speed?: nu
 }
 
 export default function NarrativeScreen() {
-  const { narrative, world, setPhase } = useGameStore()
+  const { narrative, world, mapImageUrl, setPhase } = useGameStore()
   const [paragraphs, setParagraphs] = useState<string[]>([])
   const [visibleParagraphs, setVisibleParagraphs] = useState<number>(0)
   const [allDone, setAllDone] = useState(false)
@@ -95,8 +95,19 @@ export default function NarrativeScreen() {
       </div>
 
       {/* Narrative container */}
-      <div ref={containerRef}
-        className="flex-1 overflow-y-auto px-4 md:px-8 pb-8 max-w-3xl mx-auto w-full">
+      <div className="flex-1 overflow-y-auto relative" ref={containerRef}>
+        {mapImageUrl && (
+          <div className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage: `linear-gradient(rgba(6,6,10,0.84), rgba(6,6,10,0.95)), url(${mapImageUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              opacity: 0.4,
+            }}
+          />
+        )}
+
+        <div className="px-4 md:px-8 pb-8 max-w-3xl mx-auto w-full relative">
 
         <div className="fantasy-panel rounded-sm p-8 md:p-12 relative">
           <div className="corner-ornament top-left" />
@@ -143,6 +154,7 @@ export default function NarrativeScreen() {
             </div>
           )}
         </div>
+      </div>
       </div>
 
       {/* Action buttons */}
