@@ -876,20 +876,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
       }
 
+      const flushSseParts = (rawParts: string[]) => {
+        for (const part of rawParts) {
+          if (!part) continue
+          for (const line of part.split('\n')) {
+            if (!line.startsWith('data:')) continue
+            const payload = line.slice(5).trimStart()
+            if (!payload) continue
+            try { processEvent(JSON.parse(payload)) } catch { /* skip malformed */ }
+          }
+        }
+      }
+
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         sseBuffer += decoder.decode(value, { stream: true })
         const parts = sseBuffer.split('\n\n')
         sseBuffer = parts.pop() ?? ''
-        for (const part of parts) {
-          for (const line of part.split('\n')) {
-            if (line.startsWith('data: ')) {
-              try { processEvent(JSON.parse(line.slice(6))) } catch { /* skip malformed */ }
-            }
-          }
-        }
+        flushSseParts(parts)
       }
+
+      sseBuffer += decoder.decode()
+      flushSseParts([sseBuffer])
 
       if (!receivedDone) {
         set({ responseTruncated: true, streamStatus: null })
