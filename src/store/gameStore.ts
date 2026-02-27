@@ -658,12 +658,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const reader = res.body!.getReader()
       let receivedDone = false
+      let streamedText = ''
       const decoder = new TextDecoder()
       let sseBuffer = ''
 
       const processEvent = (data: Record<string, unknown>) => {
         if (data.type === 'chunk') {
-          set(state => ({ streamingContent: state.streamingContent + (data.content as string), streamStatus: '이야기를 생성 중...' }))
+          const chunk = data.content as string
+          streamedText += chunk
+          set(state => ({ streamingContent: state.streamingContent + chunk, streamStatus: '이야기를 생성 중...' }))
         } else if (data.type === 'status') {
           set({ streamStatus: String((data as { message?: string }).message ?? '처리 중...') })
         } else if (data.type === 'heartbeat') {
@@ -938,6 +941,48 @@ export const useGameStore = create<GameStore>((set, get) => ({
       flushSseParts([sseBuffer])
 
       if (!receivedDone) {
+        if (attempt < MAX_RETRIES) {
+          throw new Error('STREAM_INCOMPLETE')
+        }
+
+        const partialText = streamedText.trim()
+        if (partialText) {
+          const fallbackResponseMsg: GameMessage = {
+            id: `msg_${Date.now()}_response_partial`,
+            role: 'narrator',
+            content: partialText,
+            summary: '응답 스트림이 중단되어 부분 응답을 표시했습니다.',
+            timestamp: Date.now(),
+          }
+
+          const newMessages = [...get().messages, fallbackResponseMsg]
+          set({
+            messages: newMessages,
+            isProcessing: false,
+            streamingContent: '',
+            streamStatus: null,
+            responseTruncated: true,
+            error: null,
+          })
+
+          if (sessionId) {
+            const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
+            const existing = sessions[sessionId]
+            if (existing) {
+              const updatedSession = {
+                ...existing,
+                messages: newMessages,
+                updatedAt: Date.now(),
+              }
+              sessions[sessionId] = updatedSession
+              lsSet(LS_SESSIONS, sessions)
+              saveSessionToServer(updatedSession)
+              get().loadSessions()
+            }
+          }
+          return
+        }
+
         set({ responseTruncated: true, streamStatus: null })
         throw new Error('응답이 중간에 종료되었습니다. 이어서 다시 시도해주세요.')
       }
@@ -945,7 +990,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         clearTimeout(timeoutId)
         const isAbort = innerErr instanceof DOMException && innerErr.name === 'AbortError'
         const isNetwork = innerErr instanceof TypeError && innerErr.message.includes('fetch')
-        if ((isAbort || isNetwork) && attempt < MAX_RETRIES) {
+        const isIncompleteStream = innerErr instanceof Error && innerErr.message === 'STREAM_INCOMPLETE'
+        if ((isAbort || isNetwork || isIncompleteStream) && attempt < MAX_RETRIES) {
           const delay = 1500 * (attempt + 1)
           set({ streamingContent: '', error: null, streamStatus: '재연결 중...' })
           await new Promise(r => setTimeout(r, delay))
