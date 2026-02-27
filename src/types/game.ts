@@ -249,7 +249,9 @@ export interface VisualDirection {
 export interface ClaudeGameResponse {
   narration: string
   summary: string            // 1-2 sentence compact summary for history compression
-  scene_description: string  // English, for image generation
+  scene_description: string  // English short summary of scene (for cache key / fallback)
+  image_prompt: string       // Detailed FLUX-optimized anime illustration prompt (English, 80-150 words)
+
   scene_tag: string          // Short normalized tag e.g. "tavern_night", "forest_day" for cache lookup
   reuse_scene_image: boolean // true = scene unchanged, skip image generation
   current_location: string

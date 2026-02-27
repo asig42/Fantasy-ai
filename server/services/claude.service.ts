@@ -322,6 +322,8 @@ const GM_JSON_FORMAT = `{
   "narration": "웹소설 스타일의 서술 (인물의 내면 심리 30%, 환경 및 감각 묘사 40%, 대사 및 행동 30% 비율로 구성, 한국어, 최소 350자)",
   "summary": "이번 턴 요약 (한국어 2-4문장, 150자 이내): 플레이어 행동, 결과, 등장 NPC와 대화 내용, 발생한 사건, 장소 변화, 획득/손실 정보, 인물간 감정선 변화 등 핵심 맥락을 모두 포함",
   "scene_description": "English keywords for image generation. MUST follow this exact order: [Time of day], [Weather], [Specific Location], [Background details], [Characters action/pose]. 아주 중요: 장소가 바뀌지 않았다면 이전 턴의 배경/장소 키워드를 정확히 동일하게 유지하세요. (max 60 words)",
+  "image_prompt": "Write a DETAILED, RICH anime illustration prompt in English for FLUX image model. Structure it as flowing natural language sentences (NOT tag lists). Must include ALL of: (1) art style: 'anime illustration style, visual novel CG, vibrant colors, detailed lineart'; (2) full scene atmosphere & time/weather: describe the exact lighting, sky, air quality; (3) specific location in vivid detail (materials, objects, architecture); (4) ALL characters present — describe each character's appearance (hair color/style, eye color, outfit, accessories) and their EXACT pose, expression, body language; (5) emotional mood & cinematic framing. Aim for 80-150 words. Example: 'Anime illustration style, visual novel CG art. A dimly lit medieval tavern at midnight, warm amber candlelight flickering across rough-hewn wooden beams and barrels. A silver-haired female elven warrior in elegant silver armor sits at a corner table, leaning forward with tired golden eyes and a slight frown, her gauntleted hand wrapped around a clay mug. Tension hangs in the smoky air. Medium shot, character-centric, intimate and moody atmosphere.'",
+
   "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
   "reuse_scene_image": false,
   "current_location": "현재 위치명",
@@ -422,7 +424,7 @@ const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
 function selectModel(playerInput: string, history: GameMessage[]): string {
   if (history.length < 6) return 'claude-sonnet-4-6'
   const emotionalDepth = [
-    '고민', '결정', '선택', '눈물', '포옹', '입맞춤', '고백', '이별', '과거', '비밀', 
+    '고민', '결정', '선택', '눈물', '포옹', '입맞춤', '고백', '이별', '과거', '비밀',
     '유혹', '호흡', '피부', '긴장', '갈등', '침실', '술', '섹시', '야한'
   ]
   const dramatic = ['전투', '공격', '폭발', '위기', '배신', '죽음']
@@ -452,14 +454,14 @@ function npcToneHint(n: NPC): string {
 export function buildHeroAppearance(character: PlayerCharacter): string {
   const genderWord = character.gender === '여성' ? 'female' : 'male'
   const classAppearance: Record<string, string> = {
-    '전사':    'warrior, armored, strong build, battle-worn',
-    '마법사':  'mage, robes, mystical accessories, sharp eyes',
-    '도적':    'rogue, dark leather armor, nimble, hooded',
-    '성직자':  'cleric, holy vestments, gentle demeanor',
-    '사냥꾼':  'ranger, earth-toned cloak, bow, alert gaze',
-    '연금술사':'alchemist, practical coat with pouches, goggles',
-    '음유시인':'bard, colorful attire, lute, charismatic smile',
-    '팔라딘':  'paladin, shining armor, holy symbol',
+    '전사': 'warrior, armored, strong build, battle-worn',
+    '마법사': 'mage, robes, mystical accessories, sharp eyes',
+    '도적': 'rogue, dark leather armor, nimble, hooded',
+    '성직자': 'cleric, holy vestments, gentle demeanor',
+    '사냥꾼': 'ranger, earth-toned cloak, bow, alert gaze',
+    '연금술사': 'alchemist, practical coat with pouches, goggles',
+    '음유시인': 'bard, colorful attire, lute, charismatic smile',
+    '팔라딘': 'paladin, shining armor, holy symbol',
   }
   const classDesc = classAppearance[character.characterClass] ?? 'adventurer'
   return `${genderWord}, age ${character.age}, ${classDesc}, medieval fantasy protagonist`

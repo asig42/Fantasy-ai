@@ -20,27 +20,27 @@ import type {
 
 // ─── Class starting skills ────────────────────────────────────
 const CLASS_SKILLS: Record<CharacterClass, string[]> = {
-  '전사':    ['강타', '방어 태세', '전투 의지'],
-  '마법사':  ['파이어볼', '마나 실드', '마법 탐지'],
-  '도적':    ['암습', '잠금 해제', '독 사용'],
-  '성직자':  ['치유', '정화', '신성한 빛'],
-  '사냥꾼':  ['정밀 사격', '함정 설치', '야생 추적'],
-  '연금술사':['폭발 포션 제조', '강화', '약물 분석'],
-  '음유시인':['매혹의 노래', '영웅 서사시', '거짓말 간파'],
-  '팔라딘':  ['신성 강타', '수호 오라', '죄악 탐지'],
+  '전사': ['강타', '방어 태세', '전투 의지'],
+  '마법사': ['파이어볼', '마나 실드', '마법 탐지'],
+  '도적': ['암습', '잠금 해제', '독 사용'],
+  '성직자': ['치유', '정화', '신성한 빛'],
+  '사냥꾼': ['정밀 사격', '함정 설치', '야생 추적'],
+  '연금술사': ['폭발 포션 제조', '강화', '약물 분석'],
+  '음유시인': ['매혹의 노래', '영웅 서사시', '거짓말 간파'],
+  '팔라딘': ['신성 강타', '수호 오라', '죄악 탐지'],
 }
 
 // ─── Class-based initial stats ────────────────────────────────
 function getInitialStats(characterClass: CharacterClass): CharacterStats {
   const classStats: Record<CharacterClass, { hp: number; mana: number }> = {
-    '전사':    { hp: 120, mana: 30 },
-    '마법사':  { hp: 80,  mana: 120 },
-    '도적':    { hp: 90,  mana: 50 },
-    '성직자':  { hp: 100, mana: 100 },
-    '사냥꾼':  { hp: 100, mana: 40 },
-    '연금술사':{ hp: 85,  mana: 85 },
-    '음유시인':{ hp: 85,  mana: 90 },
-    '팔라딘':  { hp: 110, mana: 70 },
+    '전사': { hp: 120, mana: 30 },
+    '마법사': { hp: 80, mana: 120 },
+    '도적': { hp: 90, mana: 50 },
+    '성직자': { hp: 100, mana: 100 },
+    '사냥꾼': { hp: 100, mana: 40 },
+    '연금술사': { hp: 85, mana: 85 },
+    '음유시인': { hp: 85, mana: 90 },
+    '팔라딘': { hp: 110, mana: 70 },
   }
   const base = classStats[characterClass] ?? { hp: 100, mana: 80 }
   return {
@@ -147,9 +147,9 @@ export interface LoadingStep {
 }
 
 const INIT_STEPS: LoadingStep[] = [
-  { id: 'world',     icon: '🌍', label: '세계 창조',    detail: '세계 이름, 대륙, 도시, 배경 설정',    status: 'pending' },
-  { id: 'narrative', icon: '📜', label: '운명의 서사',  detail: '세계 배경 서사 및 예언 작성',          status: 'pending' },
-  { id: 'map',       icon: '🗺', label: '세계 지도',    detail: '지도 이미지 생성 (fal.ai)',           status: 'pending' },
+  { id: 'world', icon: '🌍', label: '세계 창조', detail: '세계 이름, 대륙, 도시, 배경 설정', status: 'pending' },
+  { id: 'narrative', icon: '📜', label: '운명의 서사', detail: '세계 배경 서사 및 예언 작성', status: 'pending' },
+  { id: 'map', icon: '🗺', label: '세계 지도', detail: '지도 이미지 생성 (fal.ai)', status: 'pending' },
 ]
 
 interface GameStore {
@@ -506,7 +506,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }, { timeout: 30000, headers: buildApiHeaders() }).then(res => {
       const quests: Quest[] = res.data.quests ?? []
       set({ quests })
-    }).catch(() => {})
+    }).catch(() => { })
 
     // 초기 장면 생성
     try {
@@ -623,12 +623,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     set(state => ({ messages: [...state.messages, playerMsg] }))
 
-    const STREAM_TIMEOUT_MS = 120_000
+    const STREAM_TIMEOUT_MS = 300_000 // 5 min — Claude (~30s) + fal.ai image (~60s) need room
     const MAX_RETRIES = 2
+
+    // pendingResponseMsgId tracks which message the async 'image' event should update.
+    // It is set when the 'done' event creates the responseMsg.
+    let pendingResponseMsgId: string | null = null
 
     const attemptStream = async (attempt: number): Promise<void> => {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
+      // Rolling timeout — resets every time any SSE event arrives (server sends heartbeat every 5 s).
+      // This prevents abort while fal.ai image generation is actively running.
+      let timeoutId = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
+      const resetTimeout = () => {
+        clearTimeout(timeoutId)
+        timeoutId = setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS)
+      }
 
       try {
         const res = await fetch('/api/game/action/stream', {
@@ -649,343 +659,360 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }),
         })
 
-        clearTimeout(timeoutId)
-
+        // Don't clear the timeout here — keep it rolling until the stream ends.
         if (!res.ok) {
+          clearTimeout(timeoutId)
           const err = await res.json().catch(() => ({ error: '서버 오류' }))
           throw new Error(err.error ?? '서버 오류')
         }
 
-      const reader = res.body!.getReader()
-      let receivedDone = false
-      let streamedText = ''
-      const decoder = new TextDecoder()
-      let sseBuffer = ''
+        const reader = res.body!.getReader()
+        let receivedDone = false
+        let streamedText = ''
+        const decoder = new TextDecoder()
+        let sseBuffer = ''
 
-      const processEvent = (data: Record<string, unknown>) => {
-        if (data.type === 'chunk') {
-          const chunk = data.content as string
-          streamedText += chunk
-          set(state => ({ streamingContent: state.streamingContent + chunk, streamStatus: '이야기를 생성 중...' }))
-        } else if (data.type === 'status') {
-          set({ streamStatus: String((data as { message?: string }).message ?? '처리 중...') })
-        } else if (data.type === 'heartbeat') {
-          set(state => ({ streamStatus: state.streamStatus ?? '응답을 기다리는 중...' }))
-        } else if (data.type === 'image') {
-          // Async scene image arrived after 'done'
-          const { sceneImageUrl: imageUrl, sceneTag: tag } = data as { sceneImageUrl: string | null; sceneTag: string }
-          if (imageUrl) {
-            set(state => {
-              const updatedCache = tag ? { ...state.sceneImageCache, [tag]: imageUrl } : state.sceneImageCache
-              const updatedMsgs = state.messages.map(m =>
-                m.sceneImagePending ? { ...m, sceneImageUrl: imageUrl, sceneImagePending: false } : m
-              )
-              const updatedScene = state.currentScene ? { ...state.currentScene, imageUrl } : state.currentScene
-              return { messages: updatedMsgs, sceneImageCache: updatedCache, currentScene: updatedScene }
-            })
-          } else {
-            // Image generation failed — just clear pending flag
-            set(state => ({
-              messages: state.messages.map(m =>
-                m.sceneImagePending ? { ...m, sceneImagePending: false } : m
-              ),
-            }))
-          }
-        } else if (data.type === 'portrait') {
-          // Async NPC portrait arrived after 'done'
-          const { npcId, emotion, portraitUrl } = data as { npcId: string; emotion: string; portraitUrl: string }
-          set(state => {
-            const cacheKey = `${npcId}_${emotion}`
-            return {
-              npcPortraitCache: { ...state.npcPortraitCache, [cacheKey]: portraitUrl },
-              npcs: state.npcs.map(n => n.id === npcId ? { ...n, portraitUrl } : n),
-              // Backfill portrait into messages created before async portrait arrived
-              messages: state.messages.map(m =>
-                m.npcId === npcId && m.npcEmotion === emotion && !m.npcPortraitUrl
-                  ? { ...m, npcPortraitUrl: portraitUrl }
-                  : m
-              ),
-            }
-          })
-        } else if (data.type === 'done') {
-          receivedDone = true
-          const {
-            narration, summary, sceneImageUrl, sceneImagePending: imagePending, sceneTag,
-            currentLocation: newLoc, timeOfDay: newTimeOfDay, weather: newWeather,
-            npcSpeaking, gameOver, newNpc, suggestedActions, statChanges,
-            questUpdates, inventoryChanges, statusEffectChanges,
-          } = data as {
-            narration: string
-            summary: string
-            sceneImageUrl: string | null
-            sceneImagePending: boolean
-            sceneTag: string
-            currentLocation: string
-            timeOfDay: TimeOfDay | null
-            weather: string | null
-            npcSpeaking: { id: string; name: string; title: string; emotion: string; portraitUrl: string | null } | null
-            gameOver: boolean
-            newNpc: NPC | null
-            suggestedActions: string[]
-            statChanges: { hp_change: number; mana_change: number; gold_change: number; experience_gain: number } | null
-            questUpdates: Array<{ id: string; title?: string; description?: string; status?: string; objectives?: string[] }> | null
-            inventoryChanges: Array<{ action: 'add' | 'remove'; name: string; description: string; quantity: number; type: InventoryItem['type'] }> | null
-            statusEffectChanges: Array<{ action: 'add' | 'remove'; id: string; name: string; description: string; type: StatusEffect['type']; icon: string }> | null
-          }
-
-          // null + imagePending → image is coming async, don't fallback
-          // null + !imagePending → reuse previous scene
-          const resolvedSceneUrl: string | undefined = imagePending
-            ? undefined
-            : (sceneImageUrl ?? get().currentScene?.imageUrl ?? undefined)
-
-          const updatedSceneCache = { ...sceneImageCache }
-          if (sceneImageUrl && sceneTag) updatedSceneCache[sceneTag] = sceneImageUrl
-
-          const updatedNpcCache = { ...npcPortraitCache }
-          if (npcSpeaking?.portraitUrl && npcSpeaking?.id && npcSpeaking?.emotion) {
-            updatedNpcCache[`${npcSpeaking.id}_${npcSpeaking.emotion}`] = npcSpeaking.portraitUrl
-          }
-
-          const responseMsg: GameMessage = {
-            id: `msg_${Date.now()}_response`,
-            role: npcSpeaking ? 'npc' : 'narrator',
-            content: narration,
-            summary: summary || undefined,
-            npcId: npcSpeaking?.id,
-            npcName: npcSpeaking?.name,
-            npcEmotion: npcSpeaking?.emotion,
-            // Snapshot portrait at creation time — prevents icon changing when NPC emotion updates later
-            npcPortraitUrl: npcSpeaking?.portraitUrl ?? undefined,
-            timestamp: Date.now(),
-            sceneImageUrl: resolvedSceneUrl,
-            sceneImagePending: imagePending || undefined,
-            suggestedActions: suggestedActions?.length ? suggestedActions : undefined,
-          }
-
-          const newMessages = [...get().messages, responseMsg]
-          const updatedLocation = newLoc ?? currentLocation
-          const newScene: SceneData = {
-            description: '',
-            imageUrl: resolvedSceneUrl,
-            currentLocation: updatedLocation,
-            npcsPresent: [],
-          }
-
-          // Apply stat changes from AI
-          const prevChar = get().character
-          let updatedCharacter = prevChar
-          if (prevChar && statChanges) {
-            const s = prevChar.stats
-            let newHp = Math.max(0, Math.min(s.maxHp, s.hp + (statChanges.hp_change ?? 0)))
-            let newMana = Math.max(0, Math.min(s.maxMana, s.mana + (statChanges.mana_change ?? 0)))
-            const newGold = Math.max(0, s.gold + (statChanges.gold_change ?? 0))
-            let newExp = s.experience + (statChanges.experience_gain ?? 0)
-            let newLevel = s.level
-            let newMaxHp = s.maxHp
-            let newMaxMana = s.maxMana
-            const expThreshold = 100 * s.level
-            if (newExp >= expThreshold) {
-              newLevel += 1
-              newExp -= expThreshold
-              newMaxHp += 10
-              newMaxMana += 5
-              newHp = Math.min(newHp + 20, newMaxHp)
-              newMana = Math.min(newMana + 10, newMaxMana)
-            }
-            updatedCharacter = {
-              ...prevChar,
-              stats: { ...s, hp: newHp, mana: newMana, gold: newGold, experience: newExp, level: newLevel, maxHp: newMaxHp, maxMana: newMaxMana },
-            }
-          }
-
-          // Apply quest updates from AI
-          let updatedQuests = get().quests
-          if (questUpdates && questUpdates.length > 0) {
-            updatedQuests = [...updatedQuests]
-            for (const u of questUpdates) {
-              if (u.id === 'new' && u.title) {
-                updatedQuests.push({
-                  id: `q_${Date.now()}`,
-                  title: u.title,
-                  description: u.description ?? '',
-                  status: (u.status as Quest['status']) ?? 'active',
-                  objectives: u.objectives ?? [],
+        const processEvent = (data: Record<string, unknown>) => {
+          // Reset the timeout on each incoming event so we never abort while data is flowing.
+          resetTimeout()
+          if (data.type === 'chunk') {
+            const chunk = data.content as string
+            streamedText += chunk
+            set(state => ({ streamingContent: state.streamingContent + chunk, streamStatus: '이야기를 생성 중...' }))
+          } else if (data.type === 'status') {
+            set({ streamStatus: String((data as { message?: string }).message ?? '처리 중...') })
+          } else if (data.type === 'heartbeat') {
+            set(state => ({ streamStatus: state.streamStatus ?? '응답을 기다리는 중...' }))
+          } else if (data.type === 'image') {
+            // Async scene image arrived after 'done'
+            const { sceneImageUrl: imageUrl, sceneTag: tag } = data as { sceneImageUrl: string | null; sceneTag: string }
+            // Use the tracked message ID to update exactly the right message.
+            // Falls back to last-pending scan if id tracking was somehow missed.
+            const targetMsgId = pendingResponseMsgId
+            if (imageUrl) {
+              set(state => {
+                const updatedCache = tag ? { ...state.sceneImageCache, [tag]: imageUrl } : state.sceneImageCache
+                const updatedMsgs = state.messages.map(m => {
+                  if (targetMsgId ? m.id === targetMsgId : m.sceneImagePending) {
+                    return { ...m, sceneImageUrl: imageUrl, sceneImagePending: false }
+                  }
+                  return m
                 })
-              } else {
-                updatedQuests = updatedQuests.map(q =>
-                  q.id === u.id ? { ...q, ...(u.status ? { status: u.status as Quest['status'] } : {}) } : q
-                )
-              }
+                const updatedScene = state.currentScene ? { ...state.currentScene, imageUrl } : state.currentScene
+                return { messages: updatedMsgs, sceneImageCache: updatedCache, currentScene: updatedScene }
+              })
+            } else {
+              // Image generation failed — just clear pending flag on the target message
+              set(state => ({
+                messages: state.messages.map(m => {
+                  if (targetMsgId ? m.id === targetMsgId : m.sceneImagePending) {
+                    return { ...m, sceneImagePending: false }
+                  }
+                  return m
+                }),
+              }))
             }
-          }
-
-          // Apply inventory changes
-          if (inventoryChanges && inventoryChanges.length > 0 && updatedCharacter) {
-            let inventory = [...(updatedCharacter.inventory ?? [])]
-            for (const change of inventoryChanges) {
-              if (change.action === 'add') {
-                const existing = inventory.find(i => i.name === change.name)
-                if (existing) {
-                  inventory = inventory.map(i => i.name === change.name ? { ...i, quantity: i.quantity + change.quantity } : i)
-                } else {
-                  inventory.push({ id: `item_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: change.name, description: change.description, quantity: change.quantity, type: change.type })
-                }
-              } else {
-                inventory = inventory.map(i => i.name === change.name ? { ...i, quantity: Math.max(0, i.quantity - change.quantity) } : i)
-                  .filter(i => i.quantity > 0)
-              }
-            }
-            updatedCharacter = { ...updatedCharacter, inventory }
-          }
-
-          // Apply status effect changes
-          if (statusEffectChanges && statusEffectChanges.length > 0 && updatedCharacter) {
-            let statusEffects = [...(updatedCharacter.statusEffects ?? [])]
-            for (const change of statusEffectChanges) {
-              if (change.action === 'add') {
-                if (!statusEffects.find(e => e.id === change.id)) {
-                  statusEffects.push({ id: change.id, name: change.name, description: change.description, type: change.type, icon: change.icon })
-                }
-              } else {
-                statusEffects = statusEffects.filter(e => e.id !== change.id)
-              }
-            }
-            updatedCharacter = { ...updatedCharacter, statusEffects }
-          }
-
-          const updatedTimeOfDay = newTimeOfDay ?? get().timeOfDay
-          const updatedWeather = newWeather ?? get().weather
-
-          set({
-            messages: newMessages,
-            currentLocation: updatedLocation,
-            currentScene: { ...newScene, timeOfDay: updatedTimeOfDay ?? undefined, weather: updatedWeather ?? undefined },
-            sceneImageCache: updatedSceneCache,
-            npcPortraitCache: updatedNpcCache,
-            suggestedActions: suggestedActions ?? [],
-            quests: updatedQuests,
-            timeOfDay: updatedTimeOfDay,
-            weather: updatedWeather,
-            isProcessing: false,
-            streamingContent: '',
-            streamStatus: imagePending ? '텍스트 응답 완료 · 이미지 생성 중...' : null,
-            ...(updatedCharacter !== prevChar ? { character: updatedCharacter } : {}),
-            ...(gameOver ? { phase: 'start' } : {}),
-          })
-
-          if (newNpc) {
+          } else if (data.type === 'portrait') {
+            // Async NPC portrait arrived after 'done'
+            const { npcId, emotion, portraitUrl } = data as { npcId: string; emotion: string; portraitUrl: string }
             set(state => {
-              if (state.npcs.some(n => n.id === (newNpc as NPC).id)) return {}
-              const updatedNpcs = [...state.npcs, newNpc as NPC]
-              lsSet(LS_NPCS, updatedNpcs)
-              return { npcs: updatedNpcs }
+              const cacheKey = `${npcId}_${emotion}`
+              return {
+                npcPortraitCache: { ...state.npcPortraitCache, [cacheKey]: portraitUrl },
+                npcs: state.npcs.map(n => n.id === npcId ? { ...n, portraitUrl } : n),
+                // Backfill portrait into messages created before async portrait arrived
+                messages: state.messages.map(m =>
+                  m.npcId === npcId && m.npcEmotion === emotion && !m.npcPortraitUrl
+                    ? { ...m, npcPortraitUrl: portraitUrl }
+                    : m
+                ),
+              }
             })
-          }
+          } else if (data.type === 'done') {
+            receivedDone = true
+            const {
+              narration, summary, sceneImageUrl, sceneImagePending: imagePending, sceneTag,
+              currentLocation: newLoc, timeOfDay: newTimeOfDay, weather: newWeather,
+              npcSpeaking, gameOver, newNpc, suggestedActions, statChanges,
+              questUpdates, inventoryChanges, statusEffectChanges,
+            } = data as {
+              narration: string
+              summary: string
+              sceneImageUrl: string | null
+              sceneImagePending: boolean
+              sceneTag: string
+              currentLocation: string
+              timeOfDay: TimeOfDay | null
+              weather: string | null
+              npcSpeaking: { id: string; name: string; title: string; emotion: string; portraitUrl: string | null } | null
+              gameOver: boolean
+              newNpc: NPC | null
+              suggestedActions: string[]
+              statChanges: { hp_change: number; mana_change: number; gold_change: number; experience_gain: number } | null
+              questUpdates: Array<{ id: string; title?: string; description?: string; status?: string; objectives?: string[] }> | null
+              inventoryChanges: Array<{ action: 'add' | 'remove'; name: string; description: string; quantity: number; type: InventoryItem['type'] }> | null
+              statusEffectChanges: Array<{ action: 'add' | 'remove'; id: string; name: string; description: string; type: StatusEffect['type']; icon: string }> | null
+            }
 
-          if (npcSpeaking?.portraitUrl) {
-            set(state => ({
-              npcs: state.npcs.map(n =>
-                n.id === npcSpeaking.id ? { ...n, portraitUrl: npcSpeaking.portraitUrl ?? undefined } : n
-              ),
-            }))
-          }
+            // null + imagePending → image is coming async, don't fallback
+            // null + !imagePending → reuse previous scene
+            const resolvedSceneUrl: string | undefined = imagePending
+              ? undefined
+              : (sceneImageUrl ?? get().currentScene?.imageUrl ?? undefined)
 
-          if (sessionId) {
-            const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
-            const existing = sessions[sessionId]
-            if (existing) {
-              const updatedSession = {
-                ...existing,
-                character: updatedCharacter ?? existing.character,
-                messages: newMessages,
-                currentLocation: updatedLocation,
-                currentScene: newScene,
-                updatedAt: Date.now(),
+            const updatedSceneCache = { ...sceneImageCache }
+            if (sceneImageUrl && sceneTag) updatedSceneCache[sceneTag] = sceneImageUrl
+
+            const updatedNpcCache = { ...npcPortraitCache }
+            if (npcSpeaking?.portraitUrl && npcSpeaking?.id && npcSpeaking?.emotion) {
+              updatedNpcCache[`${npcSpeaking.id}_${npcSpeaking.emotion}`] = npcSpeaking.portraitUrl
+            }
+
+            const responseMsgId = `msg_${Date.now()}_response`
+            // Track this ID so the async 'image' event can update exactly this message.
+            pendingResponseMsgId = imagePending ? responseMsgId : null
+            const responseMsg: GameMessage = {
+              id: responseMsgId,
+              role: npcSpeaking ? 'npc' : 'narrator',
+              content: narration,
+              summary: summary || undefined,
+              npcId: npcSpeaking?.id,
+              npcName: npcSpeaking?.name,
+              npcEmotion: npcSpeaking?.emotion,
+              // Snapshot portrait at creation time — prevents icon changing when NPC emotion updates later
+              npcPortraitUrl: npcSpeaking?.portraitUrl ?? undefined,
+              timestamp: Date.now(),
+              sceneImageUrl: resolvedSceneUrl,
+              sceneImagePending: imagePending || undefined,
+              suggestedActions: suggestedActions?.length ? suggestedActions : undefined,
+            }
+
+            const newMessages = [...get().messages, responseMsg]
+            const updatedLocation = newLoc ?? currentLocation
+            const newScene: SceneData = {
+              description: '',
+              imageUrl: resolvedSceneUrl,
+              currentLocation: updatedLocation,
+              npcsPresent: [],
+            }
+
+            // Apply stat changes from AI
+            const prevChar = get().character
+            let updatedCharacter = prevChar
+            if (prevChar && statChanges) {
+              const s = prevChar.stats
+              let newHp = Math.max(0, Math.min(s.maxHp, s.hp + (statChanges.hp_change ?? 0)))
+              let newMana = Math.max(0, Math.min(s.maxMana, s.mana + (statChanges.mana_change ?? 0)))
+              const newGold = Math.max(0, s.gold + (statChanges.gold_change ?? 0))
+              let newExp = s.experience + (statChanges.experience_gain ?? 0)
+              let newLevel = s.level
+              let newMaxHp = s.maxHp
+              let newMaxMana = s.maxMana
+              const expThreshold = 100 * s.level
+              if (newExp >= expThreshold) {
+                newLevel += 1
+                newExp -= expThreshold
+                newMaxHp += 10
+                newMaxMana += 5
+                newHp = Math.min(newHp + 20, newMaxHp)
+                newMana = Math.min(newMana + 10, newMaxMana)
               }
-              sessions[sessionId] = updatedSession
-              lsSet(LS_SESSIONS, sessions)
-              saveSessionToServer(updatedSession)
-              get().loadSessions()
+              updatedCharacter = {
+                ...prevChar,
+                stats: { ...s, hp: newHp, mana: newMana, gold: newGold, experience: newExp, level: newLevel, maxHp: newMaxHp, maxMana: newMaxMana },
+              }
+            }
+
+            // Apply quest updates from AI
+            let updatedQuests = get().quests
+            if (questUpdates && questUpdates.length > 0) {
+              updatedQuests = [...updatedQuests]
+              for (const u of questUpdates) {
+                if (u.id === 'new' && u.title) {
+                  updatedQuests.push({
+                    id: `q_${Date.now()}`,
+                    title: u.title,
+                    description: u.description ?? '',
+                    status: (u.status as Quest['status']) ?? 'active',
+                    objectives: u.objectives ?? [],
+                  })
+                } else {
+                  updatedQuests = updatedQuests.map(q =>
+                    q.id === u.id ? { ...q, ...(u.status ? { status: u.status as Quest['status'] } : {}) } : q
+                  )
+                }
+              }
+            }
+
+            // Apply inventory changes
+            if (inventoryChanges && inventoryChanges.length > 0 && updatedCharacter) {
+              let inventory = [...(updatedCharacter.inventory ?? [])]
+              for (const change of inventoryChanges) {
+                if (change.action === 'add') {
+                  const existing = inventory.find(i => i.name === change.name)
+                  if (existing) {
+                    inventory = inventory.map(i => i.name === change.name ? { ...i, quantity: i.quantity + change.quantity } : i)
+                  } else {
+                    inventory.push({ id: `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, name: change.name, description: change.description, quantity: change.quantity, type: change.type })
+                  }
+                } else {
+                  inventory = inventory.map(i => i.name === change.name ? { ...i, quantity: Math.max(0, i.quantity - change.quantity) } : i)
+                    .filter(i => i.quantity > 0)
+                }
+              }
+              updatedCharacter = { ...updatedCharacter, inventory }
+            }
+
+            // Apply status effect changes
+            if (statusEffectChanges && statusEffectChanges.length > 0 && updatedCharacter) {
+              let statusEffects = [...(updatedCharacter.statusEffects ?? [])]
+              for (const change of statusEffectChanges) {
+                if (change.action === 'add') {
+                  if (!statusEffects.find(e => e.id === change.id)) {
+                    statusEffects.push({ id: change.id, name: change.name, description: change.description, type: change.type, icon: change.icon })
+                  }
+                } else {
+                  statusEffects = statusEffects.filter(e => e.id !== change.id)
+                }
+              }
+              updatedCharacter = { ...updatedCharacter, statusEffects }
+            }
+
+            const updatedTimeOfDay = newTimeOfDay ?? get().timeOfDay
+            const updatedWeather = newWeather ?? get().weather
+
+            set({
+              messages: newMessages,
+              currentLocation: updatedLocation,
+              currentScene: { ...newScene, timeOfDay: updatedTimeOfDay ?? undefined, weather: updatedWeather ?? undefined },
+              sceneImageCache: updatedSceneCache,
+              npcPortraitCache: updatedNpcCache,
+              suggestedActions: suggestedActions ?? [],
+              quests: updatedQuests,
+              timeOfDay: updatedTimeOfDay,
+              weather: updatedWeather,
+              isProcessing: false,
+              streamingContent: '',
+              streamStatus: imagePending ? '텍스트 응답 완료 · 이미지 생성 중...' : null,
+              ...(updatedCharacter !== prevChar ? { character: updatedCharacter } : {}),
+              ...(gameOver ? { phase: 'start' } : {}),
+            })
+
+            if (newNpc) {
+              set(state => {
+                if (state.npcs.some(n => n.id === (newNpc as NPC).id)) return {}
+                const updatedNpcs = [...state.npcs, newNpc as NPC]
+                lsSet(LS_NPCS, updatedNpcs)
+                return { npcs: updatedNpcs }
+              })
+            }
+
+            if (npcSpeaking?.portraitUrl) {
+              set(state => ({
+                npcs: state.npcs.map(n =>
+                  n.id === npcSpeaking.id ? { ...n, portraitUrl: npcSpeaking.portraitUrl ?? undefined } : n
+                ),
+              }))
+            }
+
+            if (sessionId) {
+              const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
+              const existing = sessions[sessionId]
+              if (existing) {
+                const updatedSession = {
+                  ...existing,
+                  character: updatedCharacter ?? existing.character,
+                  messages: newMessages,
+                  currentLocation: updatedLocation,
+                  currentScene: newScene,
+                  updatedAt: Date.now(),
+                }
+                sessions[sessionId] = updatedSession
+                lsSet(LS_SESSIONS, sessions)
+                saveSessionToServer(updatedSession)
+                get().loadSessions()
+              }
+            }
+          } else if (data.type === 'complete') {
+            set({ streamStatus: null })
+          } else if (data.type === 'error') {
+            throw new Error(data.error as string)
+          }
+        }
+
+        const flushSseParts = (rawParts: string[]) => {
+          for (const part of rawParts) {
+            if (!part) continue
+            for (const line of part.split('\n')) {
+              if (!line.startsWith('data:')) continue
+              const payload = line.slice(5).trimStart()
+              if (!payload) continue
+              try { processEvent(JSON.parse(payload)) } catch { /* skip malformed */ }
             }
           }
-        } else if (data.type === 'complete') {
-          set({ streamStatus: null })
-        } else if (data.type === 'error') {
-          throw new Error(data.error as string)
-        }
-      }
-
-      const flushSseParts = (rawParts: string[]) => {
-        for (const part of rawParts) {
-          if (!part) continue
-          for (const line of part.split('\n')) {
-            if (!line.startsWith('data:')) continue
-            const payload = line.slice(5).trimStart()
-            if (!payload) continue
-            try { processEvent(JSON.parse(payload)) } catch { /* skip malformed */ }
-          }
-        }
-      }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        sseBuffer += decoder.decode(value, { stream: true })
-        const parts = sseBuffer.split('\n\n')
-        sseBuffer = parts.pop() ?? ''
-        flushSseParts(parts)
-      }
-
-      sseBuffer += decoder.decode()
-      flushSseParts([sseBuffer])
-
-      if (!receivedDone) {
-        if (attempt < MAX_RETRIES) {
-          throw new Error('STREAM_INCOMPLETE')
         }
 
-        const partialText = streamedText.trim()
-        if (partialText) {
-          const fallbackResponseMsg: GameMessage = {
-            id: `msg_${Date.now()}_response_partial`,
-            role: 'narrator',
-            content: partialText,
-            summary: '응답 스트림이 중단되어 부분 응답을 표시했습니다.',
-            timestamp: Date.now(),
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          sseBuffer += decoder.decode(value, { stream: true })
+          const parts = sseBuffer.split('\n\n')
+          sseBuffer = parts.pop() ?? ''
+          flushSseParts(parts)
+        }
+
+        sseBuffer += decoder.decode()
+        flushSseParts([sseBuffer])
+
+        // Stream finished — clear the rolling timeout to prevent it firing after loop
+        clearTimeout(timeoutId)
+
+        if (!receivedDone) {
+          if (attempt < MAX_RETRIES) {
+            throw new Error('STREAM_INCOMPLETE')
           }
 
-          const newMessages = [...get().messages, fallbackResponseMsg]
-          set({
-            messages: newMessages,
-            isProcessing: false,
-            streamingContent: '',
-            streamStatus: null,
-            responseTruncated: true,
-            error: null,
-          })
-
-          if (sessionId) {
-            const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
-            const existing = sessions[sessionId]
-            if (existing) {
-              const updatedSession = {
-                ...existing,
-                messages: newMessages,
-                updatedAt: Date.now(),
-              }
-              sessions[sessionId] = updatedSession
-              lsSet(LS_SESSIONS, sessions)
-              saveSessionToServer(updatedSession)
-              get().loadSessions()
+          const partialText = streamedText.trim()
+          if (partialText) {
+            const fallbackResponseMsg: GameMessage = {
+              id: `msg_${Date.now()}_response_partial`,
+              role: 'narrator',
+              content: partialText,
+              summary: '응답 스트림이 중단되어 부분 응답을 표시했습니다.',
+              timestamp: Date.now(),
             }
-          }
-          return
-        }
 
-        set({ responseTruncated: true, streamStatus: null })
-        throw new Error('응답이 중간에 종료되었습니다. 이어서 다시 시도해주세요.')
-      }
+            const newMessages = [...get().messages, fallbackResponseMsg]
+            set({
+              messages: newMessages,
+              isProcessing: false,
+              streamingContent: '',
+              streamStatus: null,
+              responseTruncated: true,
+              error: null,
+            })
+
+            if (sessionId) {
+              const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
+              const existing = sessions[sessionId]
+              if (existing) {
+                const updatedSession = {
+                  ...existing,
+                  messages: newMessages,
+                  updatedAt: Date.now(),
+                }
+                sessions[sessionId] = updatedSession
+                lsSet(LS_SESSIONS, sessions)
+                saveSessionToServer(updatedSession)
+                get().loadSessions()
+              }
+            }
+            return
+          }
+
+          set({ responseTruncated: true, streamStatus: null })
+          throw new Error('응답이 중간에 종료되었습니다. 이어서 다시 시도해주세요.')
+        }
       } catch (innerErr: unknown) {
         clearTimeout(timeoutId)
         const isAbort = innerErr instanceof DOMException && innerErr.name === 'AbortError'
@@ -1026,18 +1053,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // Fetch only missing pieces — individually so one failure doesn't block the others
       const [worldRes, npcsRes, narrativeRes] = await Promise.all([
-        world   ? Promise.resolve(null) : axios.get('/api/world',     { timeout: 15000, headers: buildApiHeaders() }).catch(() => null),
-        npcs    ? Promise.resolve(null) : axios.get('/api/npcs',      { timeout: 15000, headers: buildApiHeaders() }).catch(() => null),
+        world ? Promise.resolve(null) : axios.get('/api/world', { timeout: 15000, headers: buildApiHeaders() }).catch(() => null),
+        npcs ? Promise.resolve(null) : axios.get('/api/npcs', { timeout: 15000, headers: buildApiHeaders() }).catch(() => null),
         narrative ? Promise.resolve(null) : axios.get('/api/narrative', { timeout: 15000, headers: buildApiHeaders() }).catch(() => null),
       ])
 
-      if (!world && worldRes)       world = worldRes.data.world ?? null
-      if (!npcs && npcsRes)         npcs  = npcsRes.data.npcs ?? []
+      if (!world && worldRes) world = worldRes.data.world ?? null
+      if (!npcs && npcsRes) npcs = npcsRes.data.npcs ?? []
       if (!narrative && narrativeRes) narrative = narrativeRes.data.narrative ?? ''
 
       // Cache to localStorage for this device
-      if (world)    lsSet(LS_WORLD, world)
-      if (npcs)     lsSet(LS_NPCS, npcs)
+      if (world) lsSet(LS_WORLD, world)
+      if (npcs) lsSet(LS_NPCS, npcs)
       if (narrative) lsSet(LS_NARRATIVE, narrative)
       const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
       sessions[sessionId] = session
@@ -1052,8 +1079,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         currentLocation: session.currentLocation,
         currentScene: session.currentScene ?? null,
         quests: session.quests ?? [],
-        world:     world ?? state.world,
-        npcs:      npcs  ?? state.npcs,
+        world: world ?? state.world,
+        npcs: npcs ?? state.npcs,
         narrative: narrative ?? state.narrative,
         mapImageUrl: world?.mapImageUrl ?? state.mapImageUrl ?? null,
         hasApiKey: true,
