@@ -124,6 +124,38 @@ function ChatAvatar({ portraitUrl, hasNpc }: { portraitUrl?: string; hasNpc: boo
   )
 }
 
+
+function TypewriterParagraphs({ text, speed = 16 }: { text: string; speed?: number }) {
+  const [displayed, setDisplayed] = useState(text)
+
+  useEffect(() => {
+    let index = 0
+    setDisplayed('')
+
+    const timer = setInterval(() => {
+      index += 3
+      if (index >= text.length) {
+        setDisplayed(text)
+        clearInterval(timer)
+        return
+      }
+      setDisplayed(text.slice(0, index))
+    }, speed)
+
+    return () => clearInterval(timer)
+  }, [text, speed])
+
+  return (
+    <>
+      {displayed.split('\n\n').filter(Boolean).map((para, i) => <p key={i} className="mb-4 last:mb-0">{para}</p>)}
+      {displayed.length < text.length && (
+        <span className="inline-block w-0.5 h-4 ml-0.5 align-middle animate-pulse"
+          style={{ background: 'rgba(212,175,55,0.7)' }} />
+      )}
+    </>
+  )
+}
+
 // ── Message Block ─────────────────────────────────────
 function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
   const npc = msg.npcId ? npcs.find(n => n.id === msg.npcId) : null
@@ -133,6 +165,7 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
     ? `◆ ${npc?.title ? npc.title + ' ' : ''}${npcDisplayName}`
     : '◆ 나레이터'
 
+  const isInitialNarration = msg.id === 'msg_initial' && !msg.npcId
   const formattedContent = msg.content
     .split('\n\n')
     .filter(Boolean)
@@ -188,7 +221,9 @@ function MessageBlock({ msg, npcs }: { msg: GameMessage; npcs: NPC[] }) {
             style={{ color: npcDisplayName ? 'rgba(212,175,55,0.55)' : 'rgba(160,144,112,0.4)' }}>
             {npcDisplayLabel}
           </p>
-          <div className="narrative-text text-sm">{formattedContent}</div>
+          <div className="narrative-text text-sm">
+            {isInitialNarration ? <TypewriterParagraphs text={msg.content} speed={18} /> : formattedContent}
+          </div>
         </div>
 
         {/* ── Scene image: show loading box if pending, show image when ready ── */}

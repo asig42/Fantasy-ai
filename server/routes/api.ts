@@ -233,26 +233,59 @@ router.post('/session/create', async (req: Request, res: Response) => {
   }
 
   try {
-    const { anthropic: anthropicKey, fal: falKey } = getRequestKeys(req)
+    const { anthropic: anthropicKey } = getRequestKeys(req)
     const initialResponse = await claude.generateInitialScene(worldData, narrative, character, anthropicKey)
-    const heroApp = buildHeroAppearance(character)
-    const sceneImageUrl = await imageService.generateEnhancedSceneImage(
-      initialResponse.scene_description,
-      initialResponse.visual_direction ?? null,
-      [],  // 초기 장면엔 아직 NPC 없음
-      heroApp,
-      initialResponse.current_location,
-      initialResponse.weather,
-      falKey
-    )
 
+    // 초기 텍스트를 먼저 보여주기 위해 이미지는 별도 API에서 비동기로 생성
     res.json({
       initialNarration: initialResponse.narration,
-      sceneImageUrl,
       currentLocation: initialResponse.current_location,
+      weather: initialResponse.weather ?? null,
+      sceneImagePending: true,
+      initialScene: {
+        sceneDescription: initialResponse.scene_description,
+        visualDirection: initialResponse.visual_direction ?? null,
+      },
     })
   } catch (err) {
     console.error('[API] Session creation error:', err)
+    res.status(500).json({ error: apiError(err) })
+  }
+})
+
+// ================================================================
+// POST /api/session/initial-image — Generate initial scene image async
+// ================================================================
+router.post('/session/initial-image', async (req: Request, res: Response) => {
+  const { sceneDescription, visualDirection, currentLocation, weather, character } = req.body as {
+    sceneDescription: string
+    visualDirection?: string | null
+    currentLocation?: string
+    weather?: string | null
+    character?: PlayerCharacter
+  }
+
+  if (!sceneDescription || !character) {
+    res.status(400).json({ error: 'sceneDescription and character are required' })
+    return
+  }
+
+  try {
+    const { fal: falKey } = getRequestKeys(req)
+    const heroApp = buildHeroAppearance(character)
+    const sceneImageUrl = await imageService.generateEnhancedSceneImage(
+      sceneDescription,
+      visualDirection ?? null,
+      [],
+      heroApp,
+      currentLocation,
+      weather ?? undefined,
+      falKey
+    )
+
+    res.json({ sceneImageUrl })
+  } catch (err) {
+    console.error('[API] Initial image generation error:', err)
     res.status(500).json({ error: apiError(err) })
   }
 })
