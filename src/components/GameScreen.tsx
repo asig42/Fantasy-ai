@@ -327,7 +327,7 @@ function StatsBar() {
 
 // ── Main GameScreen ───────────────────────────────────
 export default function GameScreen() {
-  const { messages, npcs, sendAction, isProcessing, streamingContent, suggestedActions, error, resetGame } = useGameStore()
+  const { messages, npcs, sendAction, isProcessing, streamingContent, suggestedActions, error, resetGame, currentScene, streamStatus, responseTruncated } = useGameStore()
   const [input, setInput] = useState('')
   const [showMenu, setShowMenu] = useState(false)
   const [showInfoPanel, setShowInfoPanel] = useState(false)
@@ -367,6 +367,7 @@ export default function GameScreen() {
 
   const DEFAULT_ACTIONS = ['주변을 살펴본다', '앞으로 나아간다', '누군가에게 말을 건다', '현재 상황을 파악한다']
   const quickActions = suggestedActions.length > 0 ? suggestedActions : DEFAULT_ACTIONS
+  const sceneBackdrop = currentScene?.imageUrl
 
   return (
     <div className="flex flex-col h-screen" style={{ background: '#05050a' }}>
@@ -453,8 +454,19 @@ export default function GameScreen() {
         </div>
 
         {/* Messages + Input column — flex-col keeps input aligned with messages */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+        {sceneBackdrop && (
+          <div className="absolute inset-0 pointer-events-none"
+            style={{
+              backgroundImage: `linear-gradient(rgba(5,5,10,0.83), rgba(5,5,10,0.95)), url(${sceneBackdrop})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              filter: 'blur(1px)',
+              opacity: 0.45,
+            }}
+          />
+        )}
+        <div className="flex-1 overflow-y-auto relative">
         <div className="px-4 py-4 space-y-6" style={{ maxWidth: '780px', margin: '0 auto' }}>
 
           {messages.map(msg => (
@@ -478,6 +490,14 @@ export default function GameScreen() {
             </div>
           )}
 
+          {isProcessing && streamStatus && (
+            <div className="flex items-center gap-3 animate-fade-in">
+              <div className="fantasy-panel rounded-sm px-4 py-2 text-xs" style={{ color: 'rgba(180,166,130,0.8)' }}>
+                ⏳ {streamStatus}
+              </div>
+            </div>
+          )}
+
           {/* Spinner — shows before first chunk arrives */}
           {isProcessing && !streamingContent && (
             <div className="flex items-center gap-3 animate-fade-in">
@@ -487,6 +507,13 @@ export default function GameScreen() {
                   게임 마스터가 이야기를 쓰는 중...
                 </span>
               </div>
+            </div>
+          )}
+
+          {responseTruncated && !error && (
+            <div className="fantasy-panel rounded-sm p-3 text-sm text-center"
+              style={{ borderColor: 'rgba(212,175,55,0.45)', color: 'rgba(232,213,176,0.82)' }}>
+              응답이 중간에 종료되었습니다. 같은 행동을 다시 보내면 이어서 진행됩니다.
             </div>
           )}
 

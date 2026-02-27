@@ -55,13 +55,13 @@ function getInitialStats(characterClass: CharacterClass): CharacterStats {
 // ─── Server session helpers ───────────────────────────────────
 async function saveSessionToServer(session: GameSession) {
   try {
-    await axios.post('/api/session/save', { session }, { timeout: 15000 })
+    await axios.post('/api/session/save', { session }, { timeout: 15000, headers: buildApiHeaders() })
   } catch (err) {
     console.warn('[Save] 서버 저장 실패 (로컬 저장은 유지됨):', err instanceof Error ? err.message : err)
     // Retry once after 3s
     setTimeout(async () => {
       try {
-        await axios.post('/api/session/save', { session }, { timeout: 15000 })
+        await axios.post('/api/session/save', { session }, { timeout: 15000, headers: buildApiHeaders() })
       } catch { /* 2nd attempt failed — local save is primary */ }
     }, 3000)
   }
@@ -79,6 +79,8 @@ const LS_NPCS = 'fantasy-ai-npcs'
 const LS_NARRATIVE = 'fantasy-ai-narrative'
 const LS_SESSIONS = 'fantasy-ai-sessions'
 const LS_LAST_SESSION = 'fantasy-ai-last-session'
+const LS_ANTHROPIC_KEY = 'fantasy-ai-anthropic-key'
+const LS_FAL_KEY = 'fantasy-ai-fal-key'
 
 function lsGet<T>(key: string): T | null {
   try {
@@ -99,6 +101,15 @@ function lsSet(key: string, value: unknown) {
 
 function lsDel(key: string) {
   try { localStorage.removeItem(key) } catch { /* ignore */ }
+}
+
+function buildApiHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {}
+  const anthropicKey = lsGet<string>(LS_ANTHROPIC_KEY)
+  const falKey = lsGet<string>(LS_FAL_KEY)
+  if (anthropicKey) headers['x-anthropic-key'] = anthropicKey
+  if (falKey) headers['x-fal-key'] = falKey
+  return headers
 }
 
 // ─── Safe error message extraction ────────────────────────────
@@ -171,6 +182,8 @@ interface GameStore {
   streamingContent: string
   suggestedActions: string[]
   error: string | null
+  streamStatus: string | null
+  responseTruncated: boolean
 
   hasApiKey: boolean
   savedSessions: SessionSummary[]
@@ -186,6 +199,7 @@ interface GameStore {
   sendAction: (input: string) => Promise<void>
   resetGame: () => Promise<void>
   setError: (err: string | null) => void
+  clearStreamFlags: () => void
   saveApiKey: (anthropicKey: string, falKey?: string) => Promise<void>
   loadSessions: () => void
   loadServerSessions: () => Promise<void>
@@ -220,6 +234,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   streamingContent: '',
   suggestedActions: [],
   error: null,
+  streamStatus: null,
+  responseTruncated: false,
 
   hasApiKey: false,
   savedSessions: [],
@@ -231,7 +247,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   saveApiKey: async (anthropicKey: string, falKey?: string) => {
     set({ error: null })
     try {
-      await axios.post('/api/config', { anthropicApiKey: anthropicKey, falKey }, { timeout: 30000 })
+      lsSet(LS_ANTHROPIC_KEY, anthropicKey)
+      if (falKey) lsSet(LS_FAL_KEY, falKey)
+      await axios.post('/api/config', { anthropicApiKey: anthropicKey, falKey }, { timeout: 30000, headers: buildApiHeaders() })
       set({ hasApiKey: true })
     } catch (err: unknown) {
       throw new Error(extractMessage(err))
@@ -257,7 +275,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   // ── Load sessions from server (cross-device) ────────────
   loadServerSessions: async () => {
     try {
-      const res = await axios.get('/api/sessions', { timeout: 5000 })
+      const res = await axios.get('/api/sessions', { timeout: 5000, headers: buildApiHeaders() })
       const serverSessions: SessionSummary[] = res.data.sessions ?? []
       if (serverSessions.length === 0) return
 
@@ -414,9 +432,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (!world) {
       try {
         const [worldRes, npcsRes, narrativeRes] = await Promise.all([
-          axios.get('/api/world', { timeout: 5000 }),
-          axios.get('/api/npcs', { timeout: 5000 }),
-          axios.get('/api/narrative', { timeout: 5000 }),
+          axios.get('/api/world', { timeout: 5000, headers: buildApiHeaders() }),
+          axios.get('/api/npcs', { timeout: 5000, headers: buildApiHeaders() }),
+          axios.get('/api/narrative', { timeout: 5000, headers: buildApiHeaders() }),
         ])
         if (worldRes.data.world) {
           world = worldRes.data.world as WorldData
@@ -494,7 +512,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     axios.post('/api/quests/generate', {
       worldName: world?.name ?? '',
       character: { name: data.name, characterClass: data.characterClass, backstory: data.backstory },
-    }, { timeout: 30000 }).then(res => {
+    }, { timeout: 30000, headers: buildApiHeaders() }).then(res => {
       const quests: Quest[] = res.data.quests ?? []
       set({ quests })
     }).catch(() => {})
@@ -505,7 +523,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ...data,
         worldData: world,
         narrative,
-      }, { timeout: 90000 })
+      }, { timeout: 90000, headers: buildApiHeaders() })
       const { initialNarration, sceneImageUrl, currentLocation } = res.data
 
       const firstMessage: GameMessage = {
@@ -558,7 +576,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } = get()
     if (!world || !character) return
 
-    set({ isProcessing: true, streamingContent: '', error: null })
+    set({ isProcessing: true, streamingContent: '', error: null, streamStatus: '응답을 준비 중...', responseTruncated: false })
 
     const playerMsg: GameMessage = {
       id: `msg_${Date.now()}_player`,
@@ -578,7 +596,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       try {
         const res = await fetch('/api/game/action/stream', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...buildApiHeaders() },
           signal: controller.signal,
           body: JSON.stringify({
             worldData: world,
@@ -602,12 +620,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
         }
 
       const reader = res.body!.getReader()
+      let receivedDone = false
       const decoder = new TextDecoder()
       let sseBuffer = ''
 
       const processEvent = (data: Record<string, unknown>) => {
         if (data.type === 'chunk') {
-          set(state => ({ streamingContent: state.streamingContent + (data.content as string) }))
+          set(state => ({ streamingContent: state.streamingContent + (data.content as string), streamStatus: '이야기를 생성 중...' }))
+        } else if (data.type === 'status') {
+          set({ streamStatus: String((data as { message?: string }).message ?? '처리 중...') })
+        } else if (data.type === 'heartbeat') {
+          set(state => ({ streamStatus: state.streamStatus ?? '응답을 기다리는 중...' }))
         } else if (data.type === 'image') {
           // Async scene image arrived after 'done'
           const { sceneImageUrl: imageUrl, sceneTag: tag } = data as { sceneImageUrl: string | null; sceneTag: string }
@@ -645,6 +668,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             }
           })
         } else if (data.type === 'done') {
+          receivedDone = true
           const {
             narration, summary, sceneImageUrl, sceneImagePending: imagePending, sceneTag,
             currentLocation: newLoc, timeOfDay: newTimeOfDay, weather: newWeather,
@@ -805,6 +829,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             weather: updatedWeather,
             isProcessing: false,
             streamingContent: '',
+            streamStatus: imagePending ? '텍스트 응답 완료 · 이미지 생성 중...' : null,
             ...(updatedCharacter !== prevChar ? { character: updatedCharacter } : {}),
             ...(gameOver ? { phase: 'start' } : {}),
           })
@@ -844,8 +869,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
               get().loadSessions()
             }
           }
+        } else if (data.type === 'complete') {
+          set({ streamStatus: null })
         } else if (data.type === 'error') {
           throw new Error(data.error as string)
+        }
+      }
+
+      const flushSseParts = (rawParts: string[]) => {
+        for (const part of rawParts) {
+          if (!part) continue
+          for (const line of part.split('\n')) {
+            if (!line.startsWith('data:')) continue
+            const payload = line.slice(5).trimStart()
+            if (!payload) continue
+            try { processEvent(JSON.parse(payload)) } catch { /* skip malformed */ }
+          }
         }
       }
 
@@ -855,13 +894,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         sseBuffer += decoder.decode(value, { stream: true })
         const parts = sseBuffer.split('\n\n')
         sseBuffer = parts.pop() ?? ''
-        for (const part of parts) {
-          for (const line of part.split('\n')) {
-            if (line.startsWith('data: ')) {
-              try { processEvent(JSON.parse(line.slice(6))) } catch { /* skip malformed */ }
-            }
-          }
-        }
+        flushSseParts(parts)
+      }
+
+      sseBuffer += decoder.decode()
+      flushSseParts([sseBuffer])
+
+      if (!receivedDone) {
+        set({ responseTruncated: true, streamStatus: null })
+        throw new Error('응답이 중간에 종료되었습니다. 이어서 다시 시도해주세요.')
       }
       } catch (innerErr: unknown) {
         clearTimeout(timeoutId)
@@ -869,7 +910,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const isNetwork = innerErr instanceof TypeError && innerErr.message.includes('fetch')
         if ((isAbort || isNetwork) && attempt < MAX_RETRIES) {
           const delay = 1500 * (attempt + 1)
-          set({ streamingContent: '', error: null })
+          set({ streamingContent: '', error: null, streamStatus: '재연결 중...' })
           await new Promise(r => setTimeout(r, delay))
           return attemptStream(attempt + 1)
         }
@@ -882,7 +923,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } catch (err: unknown) {
       const isAbort = err instanceof DOMException && err.name === 'AbortError'
       const msg = isAbort ? '응답 시간이 초과되었습니다. 다시 시도해주세요.' : `행동 처리 실패: ${extractMessage(err)}`
-      set({ error: msg, isProcessing: false, streamingContent: '' })
+      set({ error: msg, isProcessing: false, streamingContent: '', streamStatus: null })
     }
   },
 
@@ -891,7 +932,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ isLoading: true, error: null })
     try {
       // Session data is critical — fetch it first
-      const sessionRes = await axios.get(`/api/session/${sessionId}`, { timeout: 15000 })
+      const sessionRes = await axios.get(`/api/session/${sessionId}`, { timeout: 15000, headers: buildApiHeaders() })
       const session: GameSession = sessionRes.data.session
 
       // Reuse already-loaded world/npcs/narrative if available (avoids redundant cross-device fetches)
@@ -902,9 +943,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       // Fetch only missing pieces — individually so one failure doesn't block the others
       const [worldRes, npcsRes, narrativeRes] = await Promise.all([
-        world   ? Promise.resolve(null) : axios.get('/api/world',     { timeout: 15000 }).catch(() => null),
-        npcs    ? Promise.resolve(null) : axios.get('/api/npcs',      { timeout: 15000 }).catch(() => null),
-        narrative ? Promise.resolve(null) : axios.get('/api/narrative', { timeout: 15000 }).catch(() => null),
+        world   ? Promise.resolve(null) : axios.get('/api/world',     { timeout: 15000, headers: buildApiHeaders() }).catch(() => null),
+        npcs    ? Promise.resolve(null) : axios.get('/api/npcs',      { timeout: 15000, headers: buildApiHeaders() }).catch(() => null),
+        narrative ? Promise.resolve(null) : axios.get('/api/narrative', { timeout: 15000, headers: buildApiHeaders() }).catch(() => null),
       ])
 
       if (!world && worldRes)       world = worldRes.data.world ?? null
@@ -951,7 +992,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Remove from server
     try {
-      await axios.delete(`/api/session/${sessionId}`, { timeout: 5000 })
+      await axios.delete(`/api/session/${sessionId}`, { timeout: 5000, headers: buildApiHeaders() })
     } catch { /* ignore — local deletion is enough */ }
 
     // If this was the last session, clear that reference too
@@ -972,7 +1013,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       character: null, backgroundOptions: [],
       sessionId: null, messages: [], currentLocation: '',
       currentScene: null, quests: [], sceneImageCache: {}, npcPortraitCache: {},
-      timeOfDay: null, weather: null, error: null,
+      timeOfDay: null, weather: null, error: null, streamStatus: null, responseTruncated: false,
     })
   },
 }))

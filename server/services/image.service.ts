@@ -64,10 +64,10 @@ function placeholderDataUrl(type: 'map' | 'portrait' | 'scene', label: string): 
 // ---------- Main Image Generation Functions (stateless - no file I/O) ----------
 
 // 💡 비주얼 노벨/애니메이션 스타일에 최적화
-const SDXL_PREFIX = "(masterpiece, best quality, highres:1.2), visual novel CG art style, 2d anime illustration, vibrant cinematic lighting, flat color, clear outlines, NSFW, uncensored";
+const SDXL_PREFIX = "(masterpiece, best quality, highres:1.2), visual novel CG art style, 2d anime illustration, vibrant cinematic lighting, flat color, clear outlines, safe fantasy artwork";
 
 // 💡 실사풍/기괴한 인체 방지
-const ANIMAGINE_NEGATIVE = "(worst quality, low quality, normal quality:1.4), (realistic, photorealistic, 3d, lip, nose:1.3), bad anatomy, bad hands, missing fingers, extra digit, ugly, deformed, text, error, blurry, monochrome";
+const ANIMAGINE_NEGATIVE = "(worst quality, low quality, normal quality:1.4), (realistic, photorealistic, 3d, lip, nose:1.3), bad anatomy, bad face, asymmetrical eyes, malformed mouth, bad hands, missing fingers, extra digit, ugly, deformed, text, watermark, error, blurry, monochrome, duplicate body";
 
 function determineComposition(description: string): string {
   const desc = description.toLowerCase();
@@ -88,9 +88,10 @@ function determineComposition(description: string): string {
 export async function generateMapImage(
   worldName: string,
   _worldLore: string,
-  continents: Array<{ name: string }>
+  continents: Array<{ name: string }>,
+  falKeyOverride?: string
 ): Promise<string> {
-  const falKey = process.env.FAL_KEY
+  const falKey = falKeyOverride ?? process.env.FAL_KEY
   if (!falKey) {
     return placeholderDataUrl('map', worldName)
   }
@@ -153,9 +154,10 @@ export async function generateNpcPortrait(
 export async function generateNpcEmotion(
   npc: { name: string; appearance: string; gender: string },
   emotion: string,
-  emotionDescription: string
+  emotionDescription: string,
+  falKeyOverride?: string
 ): Promise<string> {
-  const falKey = process.env.FAL_KEY
+  const falKey = falKeyOverride ?? process.env.FAL_KEY
   if (!falKey) {
     return placeholderDataUrl('portrait', `${npc.name}\n(${emotion})`)
   }
@@ -173,7 +175,7 @@ export async function generateNpcEmotion(
     }
 
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
-    const prompt = `${SDXL_PREFIX}bust portrait, fantasy character, ${genderWord}, ${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, consistent character design, visual novel character art style, clean background`
+    const prompt = `${SDXL_PREFIX}bust portrait, fantasy character, ${genderWord}, ${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, centered face, symmetrical facial features, detailed eyes, clean lineart, consistent character design, visual novel character art style, clean background`
 
     const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {
@@ -284,9 +286,10 @@ export async function generateEnhancedSceneImage(
   activeNpcs?: NPC[],
   heroAppearance?: string,
   currentLocation?: string,
-  weather?: string
+  weather?: string,
+  falKeyOverride?: string
 ): Promise<string> {
-  const falKey = process.env.FAL_KEY
+  const falKey = falKeyOverride ?? process.env.FAL_KEY
   if (!falKey) return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
 
   try {
@@ -297,7 +300,7 @@ export async function generateEnhancedSceneImage(
     if (activeNpcs && activeNpcs.length > 0) {
       const targetNpcs = activeNpcs.slice(0, 2);
       npcAppearance = targetNpcs.map(n => `(${n.appearance}:1.1)`).join(', ');
-      const personCount = targetNpcs.length === 1 ? "1girl/1boy, solo" : "2girls/2boys/1girl 1boy, multiple characters";
+      const personCount = targetNpcs.length === 1 ? "solo character, portrait framing" : "2 characters maximum, character-focused framing";
       npcAppearance = `${personCount}, ${npcAppearance}`;
     }
 
@@ -310,7 +313,9 @@ export async function generateEnhancedSceneImage(
       ? SHOT_COMPOSITION[direction.camera_shot]
       : determineComposition(sceneDescription)
 
-    const focusTags   = direction?.focus    ? FOCUS_TAGS[direction.focus]    : 'medium shot, protagonist visible, cinematic composition'
+    const focusTags   = direction?.focus
+      ? FOCUS_TAGS[direction.focus]
+      : 'character-centric composition, protagonist clearly visible, face details preserved, cinematic composition'
     const lightingTag = direction?.lighting ? direction.lighting + ' lighting' : 'cinematic atmospheric lighting'
 
     // ── 중요도에 따른 품질 차별화 ──
@@ -331,6 +336,7 @@ export async function generateEnhancedSceneImage(
       focusTags,
       heroAppearance ? `protagonist: ${heroAppearance}` : '',
       npcAppearance  ? `characters: ${npcAppearance}`   : '',
+      'main subject in foreground, readable face, clean anatomy',
       intensityTag,
     ].filter(Boolean)
 

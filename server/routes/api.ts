@@ -19,6 +19,12 @@ import type {
 
 const router = Router()
 
+function getRequestKeys(req: Request) {
+  const anthropic = typeof req.headers['x-anthropic-key'] === 'string' ? req.headers['x-anthropic-key'] : undefined
+  const fal = typeof req.headers['x-fal-key'] === 'string' ? req.headers['x-fal-key'] : undefined
+  return { anthropic, fal }
+}
+
 // ── Common API error translator ───────────────────────────────────
 function apiError(err: unknown): string {
   const msg = String(err)
@@ -89,9 +95,10 @@ router.post('/config', async (req: Request, res: Response) => {
 // ================================================================
 // POST /api/world/generate — Step 1: Generate world only
 // ================================================================
-router.post('/world/generate', async (_req: Request, res: Response) => {
+router.post('/world/generate', async (req: Request, res: Response) => {
   try {
-    const world = await claude.generateWorld()
+    const { anthropic: anthropicKey } = getRequestKeys(req)
+    const world = await claude.generateWorld(anthropicKey)
     console.log(`[API] World created: ${world.name}`)
     saveWorld(world).catch(() => {})
     res.json({ world })
@@ -108,7 +115,8 @@ router.post('/npcs/generate', async (req: Request, res: Response) => {
   const { world } = req.body as { world: WorldData }
   if (!world) return res.status(400).json({ error: 'world required' })
   try {
-    const npcs = await claude.generateNPCs(world)
+    const { anthropic: anthropicKey } = getRequestKeys(req)
+    const npcs = await claude.generateNPCs(world, anthropicKey)
     console.log(`[API] NPCs created: ${npcs.length}`)
     saveNPCs(npcs).catch(() => {})
     res.json({ npcs })
@@ -125,7 +133,8 @@ router.post('/narrative/generate', async (req: Request, res: Response) => {
   const { world } = req.body as { world: WorldData }
   if (!world) return res.status(400).json({ error: 'world required' })
   try {
-    const narrative = await claude.generateNarrative(world)
+    const { anthropic: anthropicKey } = getRequestKeys(req)
+    const narrative = await claude.generateNarrative(world, anthropicKey)
     console.log('[API] Narrative created')
     saveNarrative(narrative).catch(() => {})
     res.json({ narrative })
@@ -142,7 +151,8 @@ router.post('/map/generate', async (req: Request, res: Response) => {
   const { world } = req.body as { world: WorldData }
   if (!world) return res.status(400).json({ error: 'world required' })
   try {
-    const mapImageUrl = await imageService.generateMapImage(world.name, world.lore, world.continents)
+    const { fal: falKey } = getRequestKeys(req)
+    const mapImageUrl = await imageService.generateMapImage(world.name, world.lore, world.continents, falKey)
     res.json({ mapImageUrl })
   } catch (err) {
     console.error('[API] Map generation error:', err)
@@ -153,11 +163,12 @@ router.post('/map/generate', async (req: Request, res: Response) => {
 // ================================================================
 // POST /api/game/init — (kept for compatibility) Full init in one call
 // ================================================================
-router.post('/game/init', async (_req: Request, res: Response) => {
+router.post('/game/init', async (req: Request, res: Response) => {
   try {
-    const world = await claude.generateWorld()
-    const npcs = await claude.generateNPCs(world)
-    const narrative = await claude.generateNarrative(world)
+    const { anthropic: anthropicKey } = getRequestKeys(req)
+    const world = await claude.generateWorld(anthropicKey)
+    const npcs = await claude.generateNPCs(world, anthropicKey)
+    const narrative = await claude.generateNarrative(world, anthropicKey)
     res.json({ world, npcs, narrative })
   } catch (err) {
     console.error('[API] Init error:', err)
@@ -180,7 +191,8 @@ router.post('/character/backgrounds', async (req: Request, res: Response) => {
   }
 
   try {
-    const backgrounds = await claude.generateCharacterBackgrounds(characterClass, worldName, worldLore)
+    const { anthropic: anthropicKey } = getRequestKeys(req)
+    const backgrounds = await claude.generateCharacterBackgrounds(characterClass, worldName, worldLore, anthropicKey)
     res.json({ backgrounds })
   } catch (err) {
     console.error('[API] Background generation error:', err)
@@ -221,7 +233,8 @@ router.post('/session/create', async (req: Request, res: Response) => {
   }
 
   try {
-    const initialResponse = await claude.generateInitialScene(worldData, narrative, character)
+    const { anthropic: anthropicKey, fal: falKey } = getRequestKeys(req)
+    const initialResponse = await claude.generateInitialScene(worldData, narrative, character, anthropicKey)
     const heroApp = buildHeroAppearance(character)
     const sceneImageUrl = await imageService.generateEnhancedSceneImage(
       initialResponse.scene_description,
@@ -229,7 +242,8 @@ router.post('/session/create', async (req: Request, res: Response) => {
       [],  // 초기 장면엔 아직 NPC 없음
       heroApp,
       initialResponse.current_location,
-      initialResponse.weather
+      initialResponse.weather,
+      falKey
     )
 
     res.json({
@@ -281,10 +295,19 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`)
   }
 
+  const heartbeat = setInterval(() => {
+    sendEvent({ type: 'heartbeat', ts: Date.now() })
+  }, 5000)
+
+  req.on('close', () => {
+    clearInterval(heartbeat)
+  })
+
   try {
+    const { anthropic: anthropicKey, fal: falKey } = getRequestKeys(req)
     const gen = claude.processGameActionStream(
       worldData, npcs ?? [], narrative ?? '',
-      character, history ?? [], input, currentLocation ?? ''
+      character, history ?? [], input, currentLocation ?? '', anthropicKey
     )
 
     let response = null
@@ -361,6 +384,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     const pendingTasks: Promise<void>[] = []
 
     if (sceneImagePending) {
+      sendEvent({ type: 'status', stage: 'scene_image_generating', message: '장면 이미지를 생성하고 있습니다.' })
       // 현재 장면에 있는 NPC 객체를 찾아 외모 데이터를 이미지 프롬프트에 포함
       const sceneNpcs = (response.available_npcs ?? [])
         .map((id: string) => allNpcs.find(n => n.id === id))
@@ -374,7 +398,8 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
           sceneNpcs,
           heroApp,
           response.current_location ?? currentLocation,
-          response.weather ?? currentWeather
+          response.weather ?? currentWeather,
+          falKey
         )
           .then(url => { sendEvent({ type: 'image', sceneImageUrl: url, sceneTag }) })
           .catch(err => {
@@ -385,19 +410,23 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     }
 
     if (pendingPortrait) {
+      sendEvent({ type: 'status', stage: 'portrait_generating', message: 'NPC 초상화를 생성하고 있습니다.' })
       const { npc, emotion, emotionDesc } = pendingPortrait
       pendingTasks.push(
-        imageService.generateNpcEmotion(npc, emotion, emotionDesc)
+        imageService.generateNpcEmotion(npc, emotion, emotionDesc, falKey)
           .then(url => { sendEvent({ type: 'portrait', npcId: npc.id, emotion, portraitUrl: url }) })
           .catch(err => { console.error('[Portrait] Generation failed:', err) })
       )
     }
 
     await Promise.all(pendingTasks)
+    sendEvent({ type: 'complete' })
+    clearInterval(heartbeat)
     res.end()
   } catch (err) {
     console.error('[API] Game action stream error:', err)
     sendEvent({ type: 'error', error: apiError(err) })
+    clearInterval(heartbeat)
     res.end()
   }
 })
@@ -427,6 +456,7 @@ router.post('/game/action', async (req: Request, res: Response) => {
   }
 
   try {
+    const { anthropic: anthropicKey, fal: falKey } = getRequestKeys(req)
     const response = await claude.processGameAction(
       worldData,
       npcs ?? [],
@@ -460,7 +490,8 @@ router.post('/game/action', async (req: Request, res: Response) => {
         sceneNpcs,
         heroApp,
         response.current_location ?? currentLocation,
-        response.weather ?? currentWeather
+        response.weather ?? currentWeather,
+        falKey
       )
       console.log(`[Image] Generated new scene: ${sceneTag}`)
     }
@@ -484,7 +515,7 @@ router.post('/game/action', async (req: Request, res: Response) => {
         } else {
           const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
             ?? npc.emotions[0]?.description ?? 'neutral expression'
-          portraitUrl = await imageService.generateNpcEmotion(npc, emotion, emotionDesc)
+          portraitUrl = await imageService.generateNpcEmotion(npc, emotion, emotionDesc, falKey)
           console.log(`[Image] Generated NPC portrait: ${cacheKey}`)
         }
 
