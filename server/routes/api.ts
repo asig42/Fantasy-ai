@@ -360,11 +360,27 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     // ── Resolve scene image from cache ─────────────────────────
     let sceneImageUrl: string | null = null
     let sceneImagePending = false
+    let shouldGenerateSceneImage = false
+
+    const latestHistorySceneImage = [...(history ?? [])]
+      .reverse()
+      .find(m => !!m.sceneImageUrl)?.sceneImageUrl ?? null
 
     if (response.reuse_scene_image) {
-      sceneImageUrl = null                              // client keeps previous
+      const cachedSceneImage = sceneTag ? sceneTagCache?.[sceneTag] : undefined
+      if (cachedSceneImage) {
+        sceneImageUrl = cachedSceneImage
+      } else if (latestHistorySceneImage) {
+        // Reuse the latest resolved scene image when Claude says the scene is unchanged.
+        sceneImageUrl = latestHistorySceneImage
+      } else {
+        // No reusable image is available; generate one so the message still has an image.
+        sceneImagePending = true
+        shouldGenerateSceneImage = true
+      }
     } else {
-      sceneImagePending = true                          // always generate fresh image
+      sceneImagePending = true
+      shouldGenerateSceneImage = true
     }
 
     // ── Resolve NPC portrait from cache ────────────────────────
@@ -417,7 +433,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     // ── Generate images async, send events when ready ──────────
     const pendingTasks: Promise<void>[] = []
 
-    if (sceneImagePending) {
+    if (shouldGenerateSceneImage) {
       sendEvent({ type: 'status', stage: 'scene_image_generating', message: '장면 이미지를 생성하고 있습니다.' })
       // 현재 장면에 있는 NPC 객체를 찾아 외모 데이터를 이미지 프롬프트에 포함
       const sceneNpcs = (response.available_npcs ?? [])
@@ -438,7 +454,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
           .then(url => { sendEvent({ type: 'image', sceneImageUrl: url, sceneTag }) })
           .catch(err => {
             console.error('[Image] Generation failed:', err)
-            sendEvent({ type: 'image', sceneImageUrl: null, sceneTag })
+            sendEvent({ type: 'image', sceneImageUrl: latestHistorySceneImage, sceneTag })
           })
       )
     }
@@ -503,12 +519,38 @@ router.post('/game/action', async (req: Request, res: Response) => {
 
     // ── Scene image: 3-level reuse check ──────────────────────────
     let sceneImageUrl: string | null = null
+    const latestHistorySceneImage = [...(history ?? [])]
+      .reverse()
+      .find(m => !!m.sceneImageUrl)?.sceneImageUrl ?? null
     const sceneTag = response.scene_tag ?? ''
 
     if (response.reuse_scene_image) {
-      // Claude says scene unchanged → skip (client keeps previous)
-      sceneImageUrl = null
-      console.log(`[Image] Reuse scene (unchanged): ${sceneTag}`)
+      const cachedSceneImage = sceneTag ? sceneTagCache?.[sceneTag] : undefined
+      if (cachedSceneImage) {
+        sceneImageUrl = cachedSceneImage
+        console.log(`[Image] Reuse scene (cache hit): ${sceneTag}`)
+      } else if (latestHistorySceneImage) {
+        sceneImageUrl = latestHistorySceneImage
+        console.log(`[Image] Reuse latest scene (history): ${sceneTag}`)
+      } else {
+        // Scene is unchanged but we still need an image for this message.
+        const allNpcsForImage = [...(npcs ?? [])]
+        if (response.new_npc) allNpcsForImage.push(response.new_npc)
+        const sceneNpcs = (response.available_npcs ?? [])
+          .map((id: string) => allNpcsForImage.find(n => n.id === id))
+          .filter((n): n is NPC => !!n)
+        const heroApp = character ? buildHeroAppearance(character) : undefined
+        sceneImageUrl = await imageService.generateEnhancedSceneImage(
+          response.scene_description,
+          response.visual_direction ?? null,
+          sceneNpcs,
+          heroApp,
+          response.current_location ?? currentLocation,
+          response.weather ?? currentWeather,
+          falKey
+        )
+        console.log(`[Image] Generated fallback scene (no reusable source): ${sceneTag}`)
+      }
     } else {
       // Always generate fresh image when scene changes
       const allNpcsForImage = [...(npcs ?? [])]
