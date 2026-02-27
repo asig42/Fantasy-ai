@@ -148,7 +148,6 @@ export interface LoadingStep {
 
 const INIT_STEPS: LoadingStep[] = [
   { id: 'world',     icon: '🌍', label: '세계 창조',    detail: '세계 이름, 대륙, 도시, 배경 설정',    status: 'pending' },
-  { id: 'npcs',      icon: '👑', label: 'NPC 소환',    detail: '핵심 NPC 10명 생성 (나머지는 게임 중 등장)',  status: 'pending' },
   { id: 'narrative', icon: '📜', label: '운명의 서사',  detail: '세계 배경 서사 및 예언 작성',          status: 'pending' },
   { id: 'map',       icon: '🗺', label: '세계 지도',    detail: '지도 이미지 생성 (fal.ai)',           status: 'pending' },
 ]
@@ -366,15 +365,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ world, mapImageUrl: world.mapImageUrl ?? null })
       setStep('world', 'done')
 
-      // Step 2: NPCs
-      setStep('npcs', 'loading')
-      const npcsRes = await axios.post('/api/npcs/generate', { world })
-      const npcs: NPC[] = npcsRes.data.npcs
-      lsSet(LS_NPCS, npcs)
-      set({ npcs })
-      setStep('npcs', 'done')
-
-      // Step 3: Narrative
+      // Step 2: Narrative
       setStep('narrative', 'loading')
       const narrativeRes = await axios.post('/api/narrative/generate', { world })
       const narrative: string = narrativeRes.data.narrative
@@ -382,7 +373,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ narrative })
       setStep('narrative', 'done')
 
-      // Step 4: Map image — skip if already cached in world
+      // Step 3: Map image — skip if already cached in world
       setStep('map', 'loading')
       if (world.mapImageUrl) {
         set({ mapImageUrl: world.mapImageUrl })
