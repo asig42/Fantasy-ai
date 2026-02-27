@@ -21,9 +21,10 @@ export function getAnthropicApiKey(): string | undefined {
   return _apiKey
 }
 
-function getClient(): Anthropic {
-  if (!_apiKey) throw new Error('ANTHROPIC_API_KEY가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.')
-  return new Anthropic({ apiKey: _apiKey })
+function getClient(apiKeyOverride?: string): Anthropic {
+  const key = apiKeyOverride ?? _apiKey
+  if (!key) throw new Error('ANTHROPIC_API_KEY가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.')
+  return new Anthropic({ apiKey: key })
 }
 
 export async function testApiKey(key: string): Promise<boolean> {
@@ -84,10 +85,10 @@ function parseJson<T>(text: string, pattern: RegExp, context: string): T {
 // ================================================================
 // 1. WORLD GENERATION
 // ================================================================
-export async function generateWorld(): Promise<WorldData> {
+export async function generateWorld(apiKeyOverride?: string): Promise<WorldData> {
   console.log('[Claude] Generating world...')
 
-  const msg = await getClient().messages.create({
+  const msg = await getClient(apiKeyOverride).messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 2000,
     system: `당신은 판타지 세계를 창조하는 전문 작가입니다.
@@ -146,12 +147,12 @@ export async function generateWorld(): Promise<WorldData> {
 // ================================================================
 // 2. NPC GENERATION
 // ================================================================
-export async function generateNPCs(world: WorldData): Promise<NPC[]> {
+export async function generateNPCs(world: WorldData, apiKeyOverride?: string): Promise<NPC[]> {
   console.log('[Claude] Generating NPCs...')
 
   const kingdomsList = world.continents.flatMap(c => c.majorKingdoms).join(', ')
 
-  const msg = await getClient().messages.create({
+  const msg = await getClient(apiKeyOverride).messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 8000,
     system: `당신은 판타지 캐릭터를 설계하는 전문 작가입니다.
@@ -203,10 +204,10 @@ JSON 배열 형식 (정확히 10명):
 // ================================================================
 // 3. NARRATIVE GENERATION
 // ================================================================
-export async function generateNarrative(world: WorldData): Promise<string> {
+export async function generateNarrative(world: WorldData, apiKeyOverride?: string): Promise<string> {
   console.log('[Claude] Generating narrative...')
 
-  const msg = await getClient().messages.create({
+  const msg = await getClient(apiKeyOverride).messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 2000,
     system: `당신은 판타지 소설의 나레이터입니다.
@@ -243,7 +244,8 @@ export async function generateNarrative(world: WorldData): Promise<string> {
 export async function generateCharacterBackgrounds(
   characterClass: CharacterClass,
   worldName: string,
-  worldLore: string
+  worldLore: string,
+  apiKeyOverride?: string
 ): Promise<BackgroundOption[]> {
   console.log('[Claude] Generating character backgrounds...')
 
@@ -258,7 +260,7 @@ export async function generateCharacterBackgrounds(
     '팔라딘': '정의와 빛을 위해 싸우는 성스러운 기사',
   }
 
-  const msg = await getClient().messages.create({
+  const msg = await getClient(apiKeyOverride).messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1500,
     system: `반드시 유효한 JSON만 반환하세요. 설명 없이 순수 JSON 배열만 출력하세요.`,
@@ -358,9 +360,10 @@ const GM_JSON_FORMAT = `{
 // 예: ["검을 뽑는다||적에게 선제 공격을 가함", "도망친다||뒤를 돌아 전력으로 달림"]
 
 // visual_direction 규칙:
-// - camera_shot 기본값: 특별한 이유 없으면 "bust-up" 또는 "full-body" 사용
+// - camera_shot 기본값: 특별한 이유 없으면 "bust-up" 또는 "waist-up" 사용 (인물 얼굴 가독성 우선)
 // - "close-up"은 오직 intensity가 "climax"일 때만 허용 (일반 대화·일상 장면에서 클로즈업 금지)
-// - focus: 장소 이동/탐험 시 "environment", 전투/감정 폭발 시 "character", 은밀한 대화 시 "intimate"
+// - focus 기본값은 "character". scene-image-container는 인물 중심 구도로 유지
+// - 장소 이동/탐험 시에만 "environment" 사용, 그 외는 "character" 또는 "intimate" 우선
 // - intensity: 일상/대화="routine", 긴장/갈등="dramatic", 절정/전투클라이맥스="climax"
 
 // time_of_day/weather 규칙: 매 턴 반드시 채워야 함. 세계의 시간 흐름을 자연스럽게 유지.
@@ -605,7 +608,8 @@ export async function processGameAction(
   character: PlayerCharacter,
   history: GameMessage[],
   playerInput: string,
-  currentLocation: string
+  currentLocation: string,
+  apiKeyOverride?: string
 ): Promise<ClaudeGameResponse> {
   console.log('[Claude] Processing game action...')
 
@@ -622,7 +626,7 @@ ${GM_JSON_FORMAT}
 
 ${NEW_NPC_RULES}`
 
-  const msg = await getClient().messages.create({
+  const msg = await getClient(apiKeyOverride).messages.create({
     model: selectModel(playerInput, history),
     max_tokens: 5000,
     system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
@@ -648,7 +652,8 @@ export async function* processGameActionStream(
   character: PlayerCharacter,
   history: GameMessage[],
   playerInput: string,
-  currentLocation: string
+  currentLocation: string,
+  apiKeyOverride?: string
 ): AsyncGenerator<StreamEvent> {
   const historyText = buildHistoryText(history)
 
@@ -663,7 +668,7 @@ ${GM_JSON_FORMAT}
 
 ${NEW_NPC_RULES}`
 
-  const stream = getClient().messages.stream({
+  const stream = getClient(apiKeyOverride).messages.stream({
     model: selectModel(playerInput, history),
     max_tokens: 5000,
     system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
@@ -721,11 +726,12 @@ ${NEW_NPC_RULES}`
 export async function generateInitialScene(
   world: WorldData,
   narrative: string,
-  character: PlayerCharacter
+  character: PlayerCharacter,
+  apiKeyOverride?: string
 ): Promise<ClaudeGameResponse> {
   console.log('[Claude] Generating initial scene...')
 
-  const msg = await getClient().messages.create({
+  const msg = await getClient(apiKeyOverride).messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 3000,
     system: `당신은 판타지 TRPG의 게임 마스터입니다.
