@@ -80,8 +80,21 @@ export default function NarrativeScreen() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col"
+    <div
+      className="relative min-h-[100dvh] flex flex-col overflow-hidden"
       style={{ background: 'radial-gradient(ellipse at top, #0f0a1a 0%, #0a0a0f 70%)' }}>
+
+      {mapImageUrl && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: `linear-gradient(rgba(6,6,10,0.8), rgba(6,6,10,0.95)), url(${mapImageUrl})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            opacity: 0.45,
+          }}
+        />
+      )}
 
       {/* Header */}
       <div className="text-center pt-10 pb-6 px-4">
@@ -96,16 +109,6 @@ export default function NarrativeScreen() {
 
       {/* Narrative container */}
       <div className="flex-1 overflow-y-auto relative" ref={containerRef}>
-        {mapImageUrl && (
-          <div className="absolute inset-0 pointer-events-none"
-            style={{
-              backgroundImage: `linear-gradient(rgba(6,6,10,0.84), rgba(6,6,10,0.95)), url(${mapImageUrl})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              opacity: 0.4,
-            }}
-          />
-        )}
 
         <div className="px-4 md:px-8 pb-8 max-w-3xl mx-auto w-full relative">
 
