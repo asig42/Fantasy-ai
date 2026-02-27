@@ -15,6 +15,7 @@ import type {
   CharacterClass,
   PlayerCharacter,
   GameMessage,
+  VisualDirection,
 } from '../../src/types/game'
 
 const router = Router()
@@ -259,7 +260,7 @@ router.post('/session/create', async (req: Request, res: Response) => {
 router.post('/session/initial-image', async (req: Request, res: Response) => {
   const { sceneDescription, visualDirection, currentLocation, weather, character } = req.body as {
     sceneDescription: string
-    visualDirection?: string | null
+    visualDirection?: VisualDirection | null
     currentLocation?: string
     weather?: string | null
     character?: PlayerCharacter
