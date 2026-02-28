@@ -729,9 +729,29 @@ export async function generateInitialScene(
   world: WorldData,
   narrative: string,
   character: PlayerCharacter,
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  startingLocation?: {
+    id: string
+    name: string
+    continent: string
+    description: string
+    atmosphere: string
+    imagePromptBase: string
+  },
+  locationNpcs?: Array<{ name: string; title: string; personality: string[] }>
 ): Promise<ClaudeGameResponse> {
-  console.log('[Claude] Generating initial scene...')
+  console.log(`[Claude] Generating initial scene at: ${startingLocation?.name ?? '랜덤 위치'}...`)
+
+  // 시작 위치 정보 — 전달받은 경우 해당 위치를 사용, 아니면 기본 여관 시작
+  const locationInfo = startingLocation
+    ? `시작 위치: ${startingLocation.name} (${startingLocation.continent})
+위치 설명: ${startingLocation.description}
+분위기: ${startingLocation.atmosphere}`
+    : `시작 위치: 발타르 시티의 한 여관`
+
+  const imagePromptHint = startingLocation
+    ? startingLocation.imagePromptBase
+    : 'tavern interior, fantasy RPG atmosphere, warm lantern light, medieval fantasy setting'
 
   const msg = await getClient(apiKeyOverride).messages.create({
     model: 'claude-sonnet-4-6',
@@ -741,28 +761,42 @@ export async function generateInitialScene(
     messages: [
       {
         role: 'user',
-        content: `세계 '${world.name}'에서 막 모험을 시작하는 ${character.name} (${character.characterClass})의 첫 장면을 만들어주세요.
+        content: `에테르노바 세계에서 모험을 시작하는 ${character.name} (${character.characterClass})의 첫 장면을 만들어주세요.
 
 주인공 배경: ${character.backstory}
-주요 서사: ${narrative.slice(0, 300)}...
 
-첫 장면은:
-- 소도시나 여관, 혹은 관문 도시에서 시작
-- 세계의 위기가 서서히 드러나기 시작
-- 첫 만남이 될 수 있는 NPC나 상황 제시
-- 플레이어가 무엇을 할 수 있는지 자연스럽게 암시
+${locationInfo}
+
+세계 위기 배경: ${narrative.slice(0, 400)}
+
+첫 장면 작성 지침:
+- 반드시 위의 시작 위치와 그 분위기를 충실하게 묘사할 것
+- 해당 장소의 특색 있는 디테일을 생생하게 표현
+- 에테르노바 세계관(마나, 다양한 종족, 세계 위기)을 자연스럽게 녹여낼 것
+- 세계의 불안한 변화가 이미 시작되었음을 암시
+- 플레이어가 어떤 행동을 할 수 있는지 자연스럽게 열어줄 것
+- 웹소설 스타일의 몰입감 있는 나레이션 (4-6문단, 최소 500자)
+${locationNpcs && locationNpcs.length > 0 ? `
+이 지역에 있을 수 있는 인물들 (모두 등장시킬 필요 없음, 분위기 참고용):
+${locationNpcs.map(n => `- ${n.title} ${n.name}: ${n.personality.slice(0,2).join(', ')}`).join('\n')}` : ''}
 
 JSON 형식:
 {
   "narration": "게임 시작 나레이션 (웹소설 스타일, 4-6문단, 한국어, 최소 500자)",
-  "scene_description": "English: tavern/town starting area, fantasy RPG atmosphere, warm lantern light, busy marketplace or inn, medieval fantasy setting",
-  "scene_tag": "tavern_night",
+  "summary": "첫 장면 요약 (1-2문장)",
+  "scene_description": "English scene description for image generation: ${imagePromptHint}, fantasy RPG style, cinematic lighting",
+  "image_prompt": "Detailed FLUX image prompt based on starting location atmosphere, 80-150 words, English",
+  "scene_tag": "${startingLocation?.id ?? 'tavern_night'}",
   "reuse_scene_image": false,
-  "current_location": "시작 위치명",
+  "current_location": "${startingLocation?.name ?? '발타르 시티'}",
+  "time_of_day": "evening",
+  "weather": "맑음",
   "npc_speaking": null,
   "npc_emotion": null,
   "available_npcs": [],
-  "game_over": false
+  "game_over": false,
+  "suggested_actions": ["주변을 살펴본다", "근처 사람에게 말을 건다", "장소를 둘러본다", "최근 소문을 듣는다"],
+  "stat_changes": {"hp_change": 0, "mana_change": 0, "gold_change": 0, "experience_gain": 0}
 }`,
       },
     ],

@@ -364,3 +364,36 @@ export async function generateEnhancedSceneImage(
 export async function generateSceneImage(sceneDescription: string): Promise<string> {
   return generateEnhancedSceneImage(sceneDescription, null, [])
 }
+
+// ================================================================
+// 에테르노바 전용 맵 이미지 생성 — 상세 프롬프트 직접 사용
+// ================================================================
+export async function generateMapImageWithPrompt(
+  fullPrompt: string,
+  falKeyOverride?: string
+): Promise<string> {
+  const falKey = falKeyOverride ?? process.env.FAL_KEY
+  if (!falKey) {
+    return placeholderDataUrl('map', 'Aeternova')
+  }
+
+  try {
+    fal.config({ credentials: falKey })
+    const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
+      input: {
+        prompt: `${SDXL_PREFIX}${fullPrompt}`,
+        negative_prompt: ANIMAGINE_NEGATIVE,
+        image_size: 'landscape_16_9',
+        num_inference_steps: 32,
+        guidance_scale: 7.5,
+        scheduler: 'Euler a',
+        enable_safety_checker: false,
+      },
+    }) as unknown as { data: { images: Array<{ url: string }> } }
+
+    return result.data?.images?.[0]?.url ?? placeholderDataUrl('map', 'Aeternova')
+  } catch (err) {
+    console.error('[Image] Aeternova map generation failed:', err)
+    return placeholderDataUrl('map', 'Aeternova')
+  }
+}

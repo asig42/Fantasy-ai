@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
+import { AETERNOVA_WORLD, AETERNOVA_NARRATIVE, STARTING_LOCATIONS } from '../data/aeternova-world'
+import { AETERNOVA_NPCS } from '../data/aeternova-npcs'
 import type {
   GamePhase,
   WorldData,
@@ -147,8 +149,7 @@ export interface LoadingStep {
 }
 
 const INIT_STEPS: LoadingStep[] = [
-  { id: 'world', icon: '🌍', label: '세계 창조', detail: '세계 이름, 대륙, 도시, 배경 설정', status: 'pending' },
-  { id: 'narrative', icon: '📜', label: '운명의 서사', detail: '세계 배경 서사 및 예언 작성', status: 'pending' },
+  { id: 'world', icon: '🌍', label: '에테르노바 로드', detail: '에테르노바 세계 데이터 불러오는 중...', status: 'pending' },
   { id: 'map', icon: '🗺', label: '세계 지도', detail: '지도 이미지 생성 (fal.ai)', status: 'pending' },
 ]
 
@@ -338,16 +339,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
   },
 
-  // ── Init game (step-by-step) ──────────────────────────────
+  // ── Init game — 에테르노바 하드코딩 데이터 즉시 로드 ──────────
   initGame: async () => {
-    // If world already loaded, skip generation and go to worldmap
     const { world: existingWorld } = get()
     if (existingWorld) {
       set({ phase: 'worldmap' })
       return
     }
 
-    // Reset steps to initial state
+    // 하드코딩 데이터 즉시 로드 (AI 생성 불필요)
     const steps = INIT_STEPS.map(s => ({ ...s }))
     set({ isLoading: true, error: null, phase: 'generating', loadingSteps: steps })
 
@@ -357,29 +357,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }))
 
     try {
-      // Step 1: World
+      // Step 1: 에테르노바 세계 데이터 즉시 로드
       setStep('world', 'loading')
-      const worldRes = await axios.post('/api/world/generate')
-      const world: WorldData = worldRes.data.world
+
+      // localStorage에 캐시된 세계 데이터 확인 (맵 이미지 URL 보존 목적)
+      const cachedWorld = lsGet<WorldData>(LS_WORLD)
+      const world: WorldData = {
+        ...AETERNOVA_WORLD,
+        // 이미 생성된 맵 이미지 URL이 있으면 재사용
+        mapImageUrl: cachedWorld?.mapImageUrl ?? AETERNOVA_WORLD.mapImageUrl,
+      }
+
       lsSet(LS_WORLD, world)
-      set({ world, mapImageUrl: world.mapImageUrl ?? null })
+      lsSet(LS_NARRATIVE, AETERNOVA_NARRATIVE)
+      lsSet(LS_NPCS, AETERNOVA_NPCS)
+      set({ world, npcs: AETERNOVA_NPCS, narrative: AETERNOVA_NARRATIVE, mapImageUrl: world.mapImageUrl ?? null })
       setStep('world', 'done')
 
-      // Step 2: Narrative
-      setStep('narrative', 'loading')
-      const narrativeRes = await axios.post('/api/narrative/generate', { world })
-      const narrative: string = narrativeRes.data.narrative
-      lsSet(LS_NARRATIVE, narrative)
-      set({ narrative })
-      setStep('narrative', 'done')
-
-      // Step 3: Map image — skip if already cached in world
+      // Step 2: 맵 이미지 — 이미 캐시된 경우 스킵, 없으면 생성
       setStep('map', 'loading')
       if (world.mapImageUrl) {
         set({ mapImageUrl: world.mapImageUrl })
         setStep('map', 'done')
       } else {
-        axios.post('/api/map/generate', { world })
+        // 맵 이미지는 fire-and-forget (비동기) — worldmap 화면 전환 후 완성되면 표시
+        axios.post('/api/map/generate', { world }, { headers: buildApiHeaders() })
           .then(res => {
             const mapImageUrl: string = res.data.mapImageUrl
             const updatedWorld = { ...world, mapImageUrl }
@@ -403,7 +405,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
   },
 
-  // ── Load existing data from localStorage (+ server fallback) ─
+  // ── Load existing data — 에테르노바 즉시 로드 + 맵 이미지 캐시 복원 ─
   loadGameData: async () => {
     try {
       const configRes = await axios.get('/api/config')
@@ -415,39 +417,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().loadSessions()
     get().loadServerSessions()
 
-    let world = lsGet<WorldData>(LS_WORLD)
-    let npcs = lsGet<NPC[]>(LS_NPCS)
-    let narrative = lsGet<string>(LS_NARRATIVE)
-
-    // If localStorage is empty, try to load from server (returning user on new device/browser)
-    if (!world) {
-      try {
-        const [worldRes, npcsRes, narrativeRes] = await Promise.all([
-          axios.get('/api/world', { timeout: 5000, headers: buildApiHeaders() }),
-          axios.get('/api/npcs', { timeout: 5000, headers: buildApiHeaders() }),
-          axios.get('/api/narrative', { timeout: 5000, headers: buildApiHeaders() }),
-        ])
-        if (worldRes.data.world) {
-          world = worldRes.data.world as WorldData
-          npcs = npcsRes.data.npcs as NPC[]
-          narrative = narrativeRes.data.narrative as string
-          lsSet(LS_WORLD, world)
-          lsSet(LS_NPCS, npcs)
-          lsSet(LS_NARRATIVE, narrative)
-        }
-      } catch {
-        // no world on server yet, that's fine
-      }
+    // 에테르노바 하드코딩 데이터를 기본으로 사용
+    // localStorage에 맵 이미지 URL이 캐시된 경우에만 복원
+    const cachedWorld = lsGet<WorldData>(LS_WORLD)
+    const world: WorldData = {
+      ...AETERNOVA_WORLD,
+      mapImageUrl: cachedWorld?.mapImageUrl ?? AETERNOVA_WORLD.mapImageUrl,
     }
 
-    if (world) {
-      set({
-        world,
-        npcs: npcs ?? [],
-        narrative: narrative ?? '',
-        mapImageUrl: world.mapImageUrl ?? null,
-      })
-    }
+    // 서사는 항상 하드코딩 데이터 사용
+    const narrative = AETERNOVA_NARRATIVE
+
+    // localStorage에 업데이트된 데이터 저장
+    lsSet(LS_WORLD, world)
+    lsSet(LS_NARRATIVE, narrative)
+
+    lsSet(LS_NPCS, AETERNOVA_NPCS)
+    set({
+      world,
+      npcs: AETERNOVA_NPCS,
+      narrative,
+      mapImageUrl: world.mapImageUrl ?? null,
+    })
   },
 
   // ── Fetch backgrounds ─────────────────────────────────────
@@ -470,6 +461,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   createSession: async (data) => {
     const { world, narrative } = get()
 
+    // ── 랜덤 시작 위치 선택 ──────────────────────────────────────
+    const randomStart = STARTING_LOCATIONS[Math.floor(Math.random() * STARTING_LOCATIONS.length)]
+
     const character: PlayerCharacter = {
       name: data.name,
       age: data.age,
@@ -490,7 +484,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       sessionId,
       character,
       messages: [],
-      currentLocation: '',
+      currentLocation: randomStart.name,
       currentScene: null,
       quests: [],
       isProcessing: true,
@@ -508,10 +502,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ quests })
     }).catch(() => { })
 
-    // 초기 장면 생성
+    // 초기 장면 생성 — 랜덤 시작 위치 정보 포함
     try {
       const res = await axios.post('/api/session/create', {
         ...data,
+        startingLocation: randomStart,
         worldData: world,
         narrative,
       }, { timeout: 90000, headers: buildApiHeaders() })
