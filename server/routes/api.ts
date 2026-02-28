@@ -649,10 +649,6 @@ router.get('/world', async (_req: Request, res: Response) => {
 router.get('/npcs', async (_req: Request, res: Response) => {
   res.json({ npcs: AETERNOVA_NPCS })
 })
-  } catch (err) {
-    res.status(500).json({ error: String(err) })
-  }
-})
 
 // ================================================================
 // GET /api/narrative — Load narrative from server disk
