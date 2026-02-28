@@ -1,4 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
+import type { SessionMemory, AffinityChange } from './npc_memory_service'
+import { buildMemoryContext, applyAffinityChanges, getOrCreateRelationship, createJournalEntry } from './npc_memory_service'
 import type {
   WorldData,
   NPC,
@@ -42,10 +44,117 @@ export async function testApiKey(key: string): Promise<boolean> {
   }
 }
 
+// ================================================================
+// ERROR CODE SYSTEM
+// ================================================================
+export type GameErrorCode =
+  | 'ERR_NO_API_KEY'        // API 키 없음
+  | 'ERR_JSON_NOT_FOUND'    // 응답에서 JSON을 찾을 수 없음
+  | 'ERR_JSON_TRUNCATED'    // max_tokens 초과로 응답 잘림
+  | 'ERR_JSON_PARSE'        // JSON 파싱 실패
+  | 'ERR_NO_TEXT_RESPONSE'  // 텍스트 응답 없음
+  | 'ERR_API_TIMEOUT'       // API 타임아웃
+  | 'ERR_API_RATE_LIMIT'    // API 속도 제한
+  | 'ERR_API_OVERLOAD'      // Claude 서버 과부하
+  | 'ERR_API_NETWORK'       // 네트워크 오류
+  | 'ERR_ACTION_FAILED'     // 게임 액션 처리 실패 (재시도 후에도)
+  | 'ERR_UNKNOWN'           // 알 수 없는 오류
+
+export class GameError extends Error {
+  code: GameErrorCode
+  context: string
+  originalError?: unknown
+  timestamp: string
+
+  constructor(code: GameErrorCode, context: string, message: string, originalError?: unknown) {
+    super(message)
+    this.name = 'GameError'
+    this.code = code
+    this.context = context
+    this.originalError = originalError
+    this.timestamp = new Date().toISOString()
+  }
+
+  toLog(): string {
+    return `[${this.timestamp}] [${this.code}] [${this.context}] ${this.message}`
+  }
+
+  toUserMessage(): string {
+    const messages: Record<GameErrorCode, string> = {
+      ERR_NO_API_KEY: 'API 키가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.',
+      ERR_JSON_NOT_FOUND: '응답을 처리할 수 없습니다. 다시 시도해주세요.',
+      ERR_JSON_TRUNCATED: '응답이 너무 길어서 잘렸습니다. 다시 시도하면 정상 작동합니다.',
+      ERR_JSON_PARSE: '응답 형식 오류가 발생했습니다. 다시 시도해주세요.',
+      ERR_NO_TEXT_RESPONSE: '응답이 없습니다. 다시 시도해주세요.',
+      ERR_API_TIMEOUT: 'API 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.',
+      ERR_API_RATE_LIMIT: 'API 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요.',
+      ERR_API_OVERLOAD: 'Claude 서버가 혼잡합니다. 잠시 후 다시 시도해주세요.',
+      ERR_API_NETWORK: '네트워크 오류가 발생했습니다. 인터넷 연결을 확인해주세요.',
+      ERR_ACTION_FAILED: '행동 처리에 실패했습니다. 다시 시도해주세요.',
+      ERR_UNKNOWN: '알 수 없는 오류가 발생했습니다. 다시 시도해주세요.',
+    }
+    return `[${this.code}] ${messages[this.code]}`
+  }
+}
+
+// API 에러를 GameError로 분류
+function classifyApiError(err: unknown, context: string): GameError {
+  const msg = String(err instanceof Error ? err.message : err).toLowerCase()
+
+  if (msg.includes('rate_limit') || msg.includes('rate limit') || msg.includes('429')) {
+    return new GameError('ERR_API_RATE_LIMIT', context, 'API 속도 제한', err)
+  }
+  if (msg.includes('overloaded') || msg.includes('529') || msg.includes('503')) {
+    return new GameError('ERR_API_OVERLOAD', context, 'Claude 서버 과부하', err)
+  }
+  if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('etimedout')) {
+    return new GameError('ERR_API_TIMEOUT', context, 'API 타임아웃', err)
+  }
+  if (msg.includes('network') || msg.includes('econnrefused') || msg.includes('enotfound') || msg.includes('fetch')) {
+    return new GameError('ERR_API_NETWORK', context, '네트워크 오류', err)
+  }
+  return new GameError('ERR_UNKNOWN', context, msg, err)
+}
+
+// 지수 백오프 재시도 헬퍼
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  context: string,
+  maxAttempts = 3,
+  baseDelayMs = 1000
+): Promise<T> {
+  let lastError: GameError | undefined
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      // GameError는 그대로, 일반 에러는 분류
+      lastError = err instanceof GameError ? err : classifyApiError(err, context)
+
+      const isRetryable = [
+        'ERR_API_RATE_LIMIT', 'ERR_API_OVERLOAD', 'ERR_API_TIMEOUT', 'ERR_API_NETWORK',
+        'ERR_JSON_TRUNCATED', 'ERR_JSON_PARSE', 'ERR_JSON_NOT_FOUND'
+      ].includes(lastError.code)
+
+      console.error(`[Claude] ${lastError.toLog()} (시도 ${attempt}/${maxAttempts})`)
+
+      if (!isRetryable || attempt === maxAttempts) break
+
+      const delay = baseDelayMs * Math.pow(2, attempt - 1)
+      console.warn(`[Claude] ${delay}ms 후 재시도...`)
+      await new Promise(r => setTimeout(r, delay))
+    }
+  }
+
+  throw lastError ?? new GameError('ERR_UNKNOWN', context, '알 수 없는 오류')
+}
+
 // JSON 파싱 헬퍼 - 잘린 응답 감지 및 배열 부분 복구
 function parseJson<T>(text: string, pattern: RegExp, context: string): T {
   const match = text.match(pattern)
-  if (!match) throw new Error(`${context}: JSON을 찾을 수 없습니다`)
+  if (!match) throw new GameError('ERR_JSON_NOT_FOUND', context, `JSON을 찾을 수 없습니다. 응답 앞부분: ${text.slice(0, 100)}`)
+
   try {
     return JSON.parse(match[0]) as T
   } catch (e) {
@@ -62,7 +171,6 @@ function parseJson<T>(text: string, pattern: RegExp, context: string): T {
       try {
         const partial = match[0]
         const items: unknown[] = []
-        // 완성된 객체만 추출 (마지막 불완전한 항목 제외)
         const objPattern = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
         let m: RegExpExecArray | null
         while ((m = objPattern.exec(partial)) !== null) {
@@ -76,9 +184,9 @@ function parseJson<T>(text: string, pattern: RegExp, context: string): T {
     }
 
     if (isTruncated) {
-      throw new Error(`${context}: 응답이 잘렸습니다 (max_tokens 초과). 잠시 후 다시 시도해주세요.`)
+      throw new GameError('ERR_JSON_TRUNCATED', context, 'max_tokens 초과로 응답이 잘렸습니다')
     }
-    throw new Error(`${context}: JSON 파싱 실패 - ${msg}`)
+    throw new GameError('ERR_JSON_PARSE', context, `JSON 파싱 실패: ${msg}`)
   }
 }
 
@@ -322,6 +430,8 @@ const GM_JSON_FORMAT = `{
   "narration": "웹소설 스타일의 서술 (인물의 내면 심리 30%, 환경 및 감각 묘사 40%, 대사 및 행동 30% 비율로 구성, 한국어, 최소 350자)",
   "summary": "이번 턴 요약 (한국어 2-4문장, 150자 이내): 플레이어 행동, 결과, 등장 NPC와 대화 내용, 발생한 사건, 장소 변화, 획득/손실 정보, 인물간 감정선 변화 등 핵심 맥락을 모두 포함",
   "scene_description": "English keywords for image generation. MUST follow this exact order: [Time of day], [Weather], [Specific Location], [Background details], [Characters action/pose]. 아주 중요: 장소가 바뀌지 않았다면 이전 턴의 배경/장소 키워드를 정확히 동일하게 유지하세요. (max 60 words)",
+  "image_prompt": "Write a DETAILED, RICH anime illustration prompt in English for FLUX image model. Structure it as flowing natural language sentences (NOT tag lists). Must include ALL of: (1) art style: 'anime illustration style, visual novel CG, vibrant colors, detailed lineart'; (2) full scene atmosphere & time/weather: describe the exact lighting, sky, air quality; (3) specific location in vivid detail (materials, objects, architecture); (4) ALL characters present — describe each character's appearance (hair color/style, eye color, outfit, accessories) and their EXACT pose, expression, body language; (5) emotional mood & cinematic framing. Aim for 80-150 words. Example: 'Anime illustration style, visual novel CG art. A dimly lit medieval tavern at midnight, warm amber candlelight flickering across rough-hewn wooden beams and barrels. A silver-haired female elven warrior in elegant silver armor sits at a corner table, leaning forward with tired golden eyes and a slight frown, her gauntleted hand wrapped around a clay mug. Tension hangs in the smoky air. Medium shot, character-centric, intimate and moody atmosphere.'",
+
   "scene_tag": "short_location_tag (e.g. tavern_night, forest_day, dungeon_corridor)",
   "reuse_scene_image": false,
   "current_location": "현재 위치명",
@@ -333,10 +443,10 @@ const GM_JSON_FORMAT = `{
   "game_over": false,
   "new_npc": null,
   "suggested_actions": [
-    "행동 제목 (10자 이내)||현재 상황에 맞는 구체적 방법·결과 설명 (30자 이내, 명사형 종결)",
-    "행동 제목 2||설명 2",
-    "행동 제목 3||설명 3",
-    "행동 제목 4||설명 4"
+    "safe||행동 제목||결과 예측 가능한 안전한 선택 (30자)",
+    "risk||행동 제목||리스크 있지만 보상도 큰 선택 (30자)",
+    "unknown||행동 제목||결과를 알 수 없는 불확실한 선택 (30자)",
+    "safe||행동 제목||상황에 맞는 추가 선택지 (30자)"
   ],
   "stat_changes": {
     "hp_change": 0,
@@ -345,6 +455,7 @@ const GM_JSON_FORMAT = `{
     "experience_gain": 0
   },
   "quest_updates": null,
+  "npc_affinity_changes": null,
   "inventory_changes": null,
   "status_effect_changes": null,
   "visual_direction": {
@@ -355,9 +466,19 @@ const GM_JSON_FORMAT = `{
   }
 }`
 
-// suggested_actions 규칙: 항상 "제목||설명" 형식 (|| 구분자 필수). 제목 10자, 설명 30자 이내. 4가지 제시.
-// 현재 상황·NPC·장소에 맞는 구체적 선택지 (전투 중이면 전투 관련, 대화 중이면 대화 관련, 탐색 중이면 탐색 관련).
-// 예: ["검을 뽑는다||적에게 선제 공격을 가함", "도망친다||뒤를 돌아 전력으로 달림"]
+// suggested_actions 규칙: 반드시 "타입||제목||설명" 3파트 형식. 타입은 safe/risk/unknown 중 하나.
+// - safe: 결과가 예측 가능하고 안전한 선택 (예: "safe||정중히 인사||우호적 첫 인상 형성")
+// - risk: 리스크가 있지만 보상도 있는 선택 (예: "risk||도발한다||전투 시작될 수 있음")
+// - unknown: 결과를 알 수 없는 불확실한 선택 (예: "unknown||이상한 문을 열어본다||무슨 일이 일어날지 모름")
+// 선택지는 현재 상황(전투/대화/탐색)에 딱 맞게. 제목 10자 이내, 설명 30자 이내.
+
+// npc_affinity_changes 규칙: NPC와 상호작용이 있을 때만 배열로 채움
+// 예: [{"npcId":"npc_01","delta":+10,"reason":"진심 어린 도움","newEmotion":"따뜻한 호기심","promiseMade":"내일 정보 제공"}]
+// - delta: -30~+30 범위. 큰 감정적 사건은 ±15 이상, 일상 대화는 ±3~8
+// - newEmotion: 이번 상호작용 후 플레이어를 대하는 감정 (자유 텍스트, 20자 이내)
+// - secretRevealed: NPC가 비밀을 털어놨을 때만 (자유 텍스트)
+// - promiseMade: 약속이 생겼을 때만 (자유 텍스트)
+// - 변화 없으면 null
 
 // visual_direction 규칙:
 // - camera_shot 기본값: 특별한 이유 없으면 "bust-up" 또는 "waist-up" 사용 (인물 얼굴 가독성 우선)
@@ -422,7 +543,7 @@ const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
 function selectModel(playerInput: string, history: GameMessage[]): string {
   if (history.length < 6) return 'claude-sonnet-4-6'
   const emotionalDepth = [
-    '고민', '결정', '선택', '눈물', '포옹', '입맞춤', '고백', '이별', '과거', '비밀', 
+    '고민', '결정', '선택', '눈물', '포옹', '입맞춤', '고백', '이별', '과거', '비밀',
     '유혹', '호흡', '피부', '긴장', '갈등', '침실', '술', '섹시', '야한'
   ]
   const dramatic = ['전투', '공격', '폭발', '위기', '배신', '죽음']
@@ -452,14 +573,14 @@ function npcToneHint(n: NPC): string {
 export function buildHeroAppearance(character: PlayerCharacter): string {
   const genderWord = character.gender === '여성' ? 'female' : 'male'
   const classAppearance: Record<string, string> = {
-    '전사':    'warrior, armored, strong build, battle-worn',
-    '마법사':  'mage, robes, mystical accessories, sharp eyes',
-    '도적':    'rogue, dark leather armor, nimble, hooded',
-    '성직자':  'cleric, holy vestments, gentle demeanor',
-    '사냥꾼':  'ranger, earth-toned cloak, bow, alert gaze',
-    '연금술사':'alchemist, practical coat with pouches, goggles',
-    '음유시인':'bard, colorful attire, lute, charismatic smile',
-    '팔라딘':  'paladin, shining armor, holy symbol',
+    '전사': 'warrior, armored, strong build, battle-worn',
+    '마법사': 'mage, robes, mystical accessories, sharp eyes',
+    '도적': 'rogue, dark leather armor, nimble, hooded',
+    '성직자': 'cleric, holy vestments, gentle demeanor',
+    '사냥꾼': 'ranger, earth-toned cloak, bow, alert gaze',
+    '연금술사': 'alchemist, practical coat with pouches, goggles',
+    '음유시인': 'bard, colorful attire, lute, charismatic smile',
+    '팔라딘': 'paladin, shining armor, holy symbol',
   }
   const classDesc = classAppearance[character.characterClass] ?? 'adventurer'
   return `${genderWord}, age ${character.age}, ${classDesc}, medieval fantasy protagonist`
@@ -467,7 +588,9 @@ export function buildHeroAppearance(character: PlayerCharacter): string {
 
 function buildSystemPrompt(
   world: WorldData, npcs: NPC[], narrative: string,
-  character: PlayerCharacter, currentLocation: string
+  character: PlayerCharacter, currentLocation: string,
+  memory?: SessionMemory,
+  activeQuests?: Quest[],
 ): string {
   const npcSummary = npcs.map(n =>
     `- ID: ${n.id} | ${n.title} ${n.name} | 나이: ${n.age}세 | 외모: ${n.appearance} | 성격: ${n.personality.join(', ')} | 성향: ${n.alignment} | 말투: ${npcToneHint(n)}`
@@ -595,8 +718,30 @@ HP 상태별 묘사:
 - experience_gain: 의미 있는 행동에만 양수, 아무것도 안 하거나 단순 대화는 0
   * 일반 전투/탐험/대화: 5 ~ 15, 중요 퀘스트/이벤트: 20 ~ 40, 보스 처치/대사건: 50 ~ 80
 
-현재 위치: ${currentLocation}`
+현재 위치: ${currentLocation}
+
+## ⏰ 시간/날씨의 게임플레이 영향 (반드시 적용)
+시간대별 제약:
+- dawn/night/midnight: 대부분의 상점·여관 문 닫힘. 길거리 NPC 거의 없음. 도적·위험 인물 출몰 가능.
+- morning/afternoon: 모든 장소 정상 운영. 시장·광장 활기.
+- dusk: 상점들 문 닫기 시작. 주점·선술집만 열림.
+날씨별 제약:
+- 폭풍/뇌우: 이동 시 체력 소모 2배. 야외 NPC 없음. 야외 전투 난이도 상승.
+- 안개: 탐색 정확도 하락. 매복 위험 증가.
+- 비: 길이 진창. 이동 속도 느려짐. 화염 마법 약화.
+- 눈: 발자국이 남음. 체온 유지 필요 (적절한 서술 필요).
+⚠️ 이 제약들을 내러티브에 자연스럽게 녹여서 세계가 살아있음을 보여주세요.
+
+${memory ? buildMemoryContext(memory) : ''}
+
+${activeQuests && activeQuests.length > 0 ? `## 🎯 현재 활성 퀘스트 (매 턴 이 목표들을 의식해서 서술하세요)
+${activeQuests.filter(q => q.status === 'active').map(q =>
+  `  - [${q.id}] ${q.title}: ${q.description}\n    목표: ${q.objectives?.join(' / ') ?? ''}`
+).join('\n')}
+⚠️ 스토리 진행이 퀘스트 목표와 관련될 때, 자연스럽게 퀘스트 진행을 암시하거나 완료 조건을 만들어주세요.` : ''}
+`
 }
+
 
 // ================================================================
 // 5. GAME ACTION PROCESSING (Main GM Function)
@@ -609,33 +754,34 @@ export async function processGameAction(
   history: GameMessage[],
   playerInput: string,
   currentLocation: string,
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  memory?: SessionMemory,
+  activeQuests?: Quest[],
 ): Promise<ClaudeGameResponse> {
   console.log('[Claude] Processing game action...')
 
   const historyText = buildHistoryText(history)
+  const userMessage = `## 최근 대화 기록 (요약 포함)\n${historyText}\n\n## 플레이어 행동\n${playerInput}\n\n다음 JSON 형식으로 응답하세요:\n${GM_JSON_FORMAT}\n\n${NEW_NPC_RULES}`
 
-  const userMessage = `## 최근 대화 기록 (요약 포함)
-${historyText}
+  return withRetry(async () => {
+    const msg = await getClient(apiKeyOverride).messages.create({
+      model: selectModel(playerInput, history),
+      max_tokens: 5000,
+      system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation, memory, activeQuests), cache_control: { type: 'ephemeral' } }] as any,
+      messages: [{ role: 'user', content: userMessage }],
+    })
 
-## 플레이어 행동
-${playerInput}
+    const textContent = msg.content.find(b => b.type === 'text')
+    if (!textContent || textContent.type !== 'text') {
+      throw new GameError('ERR_NO_TEXT_RESPONSE', '게임 액션', `텍스트 응답 없음. stop_reason: ${msg.stop_reason}, usage: ${JSON.stringify(msg.usage)}`)
+    }
 
-다음 JSON 형식으로 응답하세요:
-${GM_JSON_FORMAT}
+    if (msg.stop_reason === 'max_tokens') {
+      console.warn(`[Claude] ⚠️ max_tokens 도달! usage=${JSON.stringify(msg.usage)} — JSON 잘림 가능성 있음`)
+    }
 
-${NEW_NPC_RULES}`
-
-  const msg = await getClient(apiKeyOverride).messages.create({
-    model: selectModel(playerInput, history),
-    max_tokens: 5000,
-    system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
-    messages: [{ role: 'user', content: userMessage }],
-  })
-
-  const textContent = msg.content.find(b => b.type === 'text')
-  if (!textContent || textContent.type !== 'text') throw new Error('No text response')
-  return parseJson<ClaudeGameResponse>(textContent.text.trim(), /\{[\s\S]*\}/, '게임 액션')
+    return parseJson<ClaudeGameResponse>(textContent.text.trim(), /\{[\s\S]*\}/, '게임 액션')
+  }, '게임 액션', 3)
 }
 
 // ================================================================
@@ -653,7 +799,9 @@ export async function* processGameActionStream(
   history: GameMessage[],
   playerInput: string,
   currentLocation: string,
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  memory?: SessionMemory,
+  activeQuests?: Quest[],
 ): AsyncGenerator<StreamEvent> {
   const historyText = buildHistoryText(history)
 
@@ -668,55 +816,68 @@ ${GM_JSON_FORMAT}
 
 ${NEW_NPC_RULES}`
 
-  const stream = getClient(apiKeyOverride).messages.stream({
-    model: selectModel(playerInput, history),
-    max_tokens: 5000,
-    system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
-    messages: [{ role: 'user', content: userMessage }],
-  })
-
   let fullText = ''
-  let narrationOffset = -1
-  let narrationSent = 0
 
-  for await (const event of stream) {
-    if (event.type !== 'content_block_delta') continue
-    const delta = event.delta as { type: string; text?: string }
-    if (delta.type !== 'text_delta' || !delta.text) continue
+  try {
+    const stream = getClient(apiKeyOverride).messages.stream({
+      model: selectModel(playerInput, history),
+      max_tokens: 5000,
+      system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation, memory, activeQuests), cache_control: { type: 'ephemeral' } }] as any,
+      messages: [{ role: 'user', content: userMessage }],
+    })
 
-    fullText += delta.text
+    let narrationOffset = -1
+    let narrationSent = 0
 
-    // Detect start of narration string value
-    if (narrationOffset === -1) {
-      const prefix = '"narration": "'
-      const idx = fullText.indexOf(prefix)
-      if (idx !== -1) narrationOffset = idx + prefix.length
+    for await (const event of stream) {
+      if (event.type !== 'content_block_delta') continue
+      const delta = event.delta as { type: string; text?: string }
+      if (delta.type !== 'text_delta' || !delta.text) continue
+
+      fullText += delta.text
+
+      // Detect start of narration string value
+      if (narrationOffset === -1) {
+        const prefix = '"narration": "'
+        const idx = fullText.indexOf(prefix)
+        if (idx !== -1) narrationOffset = idx + prefix.length
+      }
+
+      if (narrationOffset === -1) continue
+
+      // Extract newly streamed narration characters
+      const available = fullText.slice(narrationOffset)
+      let endIdx = -1
+      let escaped = false
+      for (let i = narrationSent; i < available.length; i++) {
+        if (escaped) { escaped = false; continue }
+        if (available[i] === '\\') { escaped = true; continue }
+        if (available[i] === '"') { endIdx = i; break }
+      }
+
+      const raw = endIdx !== -1
+        ? available.slice(narrationSent, endIdx)
+        : available.slice(narrationSent)
+
+      if (raw) {
+        const decoded = raw.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+        yield { type: 'chunk', content: decoded }
+        narrationSent = endIdx !== -1 ? endIdx : available.length
+      }
     }
 
-    if (narrationOffset === -1) continue
-
-    // Extract newly streamed narration characters
-    const available = fullText.slice(narrationOffset)
-    let endIdx = -1
-    let escaped = false
-    for (let i = narrationSent; i < available.length; i++) {
-      if (escaped) { escaped = false; continue }
-      if (available[i] === '\\') { escaped = true; continue }
-      if (available[i] === '"') { endIdx = i; break }
+    // 스트림 완료 후 stop_reason 확인
+    const finalMessage = await stream.finalMessage()
+    if (finalMessage.stop_reason === 'max_tokens') {
+      console.warn(`[Claude] ⚠️ Stream max_tokens 도달! usage=${JSON.stringify(finalMessage.usage)}`)
     }
-
-    const raw = endIdx !== -1
-      ? available.slice(narrationSent, endIdx)
-      : available.slice(narrationSent)
-
-    if (raw) {
-      const decoded = raw.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-      yield { type: 'chunk', content: decoded }
-      narrationSent = endIdx !== -1 ? endIdx : available.length
-    }
+  } catch (err) {
+    const gameErr = err instanceof GameError ? err : classifyApiError(err, '게임 액션 스트림')
+    console.error(`[Claude] Stream error: ${gameErr.toLog()}`)
+    throw gameErr
   }
 
-  const response = parseJson<ClaudeGameResponse>(fullText.trim(), /\{[\s\S]*\}/, '게임 액션')
+  const response = parseJson<ClaudeGameResponse>(fullText.trim(), /\{[\s\S]*\}/, '게임 액션 스트림')
   yield { type: 'done', response }
 }
 
@@ -805,5 +966,60 @@ export async function generateInitialQuests(
     return (parsed.quests ?? []) as Quest[]
   } catch {
     return []
+  }
+}
+
+// ================================================================
+// WORLD JOURNAL COMPRESSION (10턴마다 호출)
+// 지난 10턴의 history를 Claude로 요약해서 세계 일지에 추가
+// ================================================================
+export async function compressHistoryToJournal(
+  history: GameMessage[],
+  turnStart: number,
+  turnEnd: number,
+  apiKeyOverride?: string
+): Promise<string> {
+  const slice = history.slice(-(turnEnd - turnStart + 1) * 2)
+  const histText = slice.map(m => {
+    if (m.role === 'player') return `[플레이어] ${m.content}`
+    return `[${m.role === 'npc' ? (m.npcName ?? 'NPC') : '나레이터'}] ${m.summary ?? m.content.slice(0, 200)}`
+  }).join('\n')
+
+  const msg = await getClient(apiKeyOverride).messages.create({
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 300,
+    system: '당신은 판타지 소설의 편집자입니다. 주어진 대화록을 간결하게 요약합니다.',
+    messages: [{
+      role: 'user',
+      content: `다음 게임 대화록(턴 ${turnStart}~${turnEnd})을 150자 이내로 요약해주세요.
+핵심만: 주요 사건, NPC와의 관계 변화, 장소 이동, 획득 정보.
+대화록:
+${histText}
+
+요약 (150자 이내, 한국어):`
+    }]
+  })
+
+  const text = msg.content.find(b => b.type === 'text')
+  return text?.type === 'text' ? text.text.trim() : `턴 ${turnStart}~${turnEnd} 진행`
+}
+
+// ================================================================
+// PARALLEL IMAGE GENERATION HELPER
+// 텍스트 스트리밍과 이미지 생성을 병렬로 시작
+// ================================================================
+export type ParallelImageResult = {
+  backgroundUrl: Promise<string>
+  sceneUrl: Promise<string>
+}
+
+export function startParallelImageGeneration(
+  generateBackground: () => Promise<string>,
+  generateScene: () => Promise<string>,
+): ParallelImageResult {
+  // 두 이미지를 동시에 시작 — await 하지 않고 Promise를 반환
+  return {
+    backgroundUrl: generateBackground(),
+    sceneUrl: generateScene(),
   }
 }
