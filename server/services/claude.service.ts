@@ -582,6 +582,7 @@ function buildStaticSystemPrompt(world: WorldData, npcs: NPC[], narrative: strin
       * 일반 전투/탐험/대화: 5 ~ 15, 중요 퀘스트/이벤트: 20 ~ 40, 보스 처치/대사건: 50 ~ 80
 
     `
+}
       function buildDynamicSystemPrompt(character: PlayerCharacter, currentLocation: string): string {
         const heroAppearance = buildHeroAppearance(character)
       
