@@ -583,28 +583,28 @@ function buildStaticSystemPrompt(world: WorldData, npcs: NPC[], narrative: strin
 
     `
 }
-      function buildDynamicSystemPrompt(character: PlayerCharacter, currentLocation: string): string {
-        const heroAppearance = buildHeroAppearance(character)
-      
-        const s = character.stats
-        const hpPct = Math.round((s.hp / s.maxHp) * 100)
-        const manaPct = Math.round((s.mana / (s.maxMana || 1)) * 100)
-        const hpStatus = hpPct >= 70 ? '건강함' : hpPct >= 30 ? '부상 있음' : '중상 (위험)'
-        const manaStatus = manaPct >= 50 ? '마나 충분' : manaPct >= 20 ? '마나 부족' : '마나 고갈'
-        const levelDesc = s.level <= 3 ? '초보 모험가' : s.level <= 15 ? '성장하는 모험가' : s.level <= 30 ? '성장한 모험가' : '베테랑 모험가'
-      
-        return `## 주인공 외모 (scene_description에 항상 포함)
-      ${heroAppearance}
-      
-      ## 주인공 현재 상태
-      이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${s.level} (${levelDesc})
-      HP: ${s.hp}/${s.maxHp} (${hpStatus}) | 마나: ${s.mana}/${s.maxMana} (${manaStatus}) | 골드: ${s.gold}G | 경험치: ${s.experience}/${s.level * 100}
-      배경: ${character.backstory.slice(0, 100)}
-      ${character.inventory && character.inventory.length > 0 ? `인벤토리: ${character.inventory.map(i => `${i.name}×${i.quantity}`).join(', ')}` : '인벤토리: 없음'}
-      ${character.statusEffects && character.statusEffects.length > 0 ? `활성 상태이상: ${character.statusEffects.map(e => `${e.icon}${e.name}`).join(', ')}` : ''}
-      
-      현재 위치: ${currentLocation}`
-      }
+
+function buildDynamicSystemPrompt(character: PlayerCharacter, currentLocation: string): string {
+  const heroAppearance = buildHeroAppearance(character)
+
+  const s = character.stats
+  const hpPct = Math.round((s.hp / s.maxHp) * 100)
+  const manaPct = Math.round((s.mana / (s.maxMana || 1)) * 100)
+  const hpStatus = hpPct >= 70 ? '건강함' : hpPct >= 30 ? '부상 있음' : '중상 (위험)'
+  const manaStatus = manaPct >= 50 ? '마나 충분' : manaPct >= 20 ? '마나 부족' : '마나 고갈'
+  const levelDesc = s.level <= 3 ? '초보 모험가' : s.level <= 15 ? '성장하는 모험가' : s.level <= 30 ? '성장한 모험가' : '베테랑 모험가'
+
+  return `## 주인공 외모 (scene_description에 항상 포함)
+${heroAppearance}
+
+## 주인공 현재 상태
+이름: ${character.name} | 직업: ${character.characterClass} | 레벨: ${s.level} (${levelDesc})
+HP: ${s.hp}/${s.maxHp} (${hpStatus}) | 마나: ${s.mana}/${s.maxMana} (${manaStatus}) | 골드: ${s.gold}G | 경험치: ${s.experience}/${s.level * 100}
+배경: ${character.backstory.slice(0, 100)}
+${character.inventory && character.inventory.length > 0 ? `인벤토리: ${character.inventory.map(i => `${i.name}×${i.quantity}`).join(', ')}` : '인벤토리: 없음'}
+${character.statusEffects && character.statusEffects.length > 0 ? `활성 상태이상: ${character.statusEffects.map(e => `${e.icon}${e.name}`).join(', ')}` : ''}
+
+현재 위치: ${currentLocation}`
 }
 
 // ================================================================
