@@ -513,9 +513,6 @@ function buildStaticSystemPrompt(world: WorldData, npcs: NPC[], narrative: strin
     - 일본어(ひらがな、カタカナ、漢字), 중국어(简体字、繁体字)는 **절대 사용 금지**
     - scene_description 필드만 예외적으로 영어 사용 (이미지 생성용)
     
-    ## 주인공 외모 (이미지 일관성용)
-    주인공 설명 (scene_description에 항상 포함): ${heroAppearance}
-    
     ## 게임 규칙
     - 웹소설/라이트노벨 스타일로 4-6문단의 몰입감 있는 서술을 작성하세요
     - 대사는 큰따옴표 "로 표시하세요
@@ -585,8 +582,8 @@ function buildStaticSystemPrompt(world: WorldData, npcs: NPC[], narrative: strin
 }
 
 function buildDynamicSystemPrompt(character: PlayerCharacter, currentLocation: string): string {
-  const heroAppearance = buildHeroAppearance(character)
 
+  const heroAppearance = buildHeroAppearance(character)
   const s = character.stats
   const hpPct = Math.round((s.hp / s.maxHp) * 100)
   const manaPct = Math.round((s.mana / (s.maxMana || 1)) * 100)
@@ -648,7 +645,7 @@ ${NEW_NPC_RULES}`
         type: 'text',
         text: buildDynamicSystemPrompt(character, currentLocation) // 💡 2순위: 실시간 변하는 스탯 (캐싱 안함)
       }
-    ] as any
+    ] as any,
     messages: [{ role: 'user', content: userMessage }],
   })
 
