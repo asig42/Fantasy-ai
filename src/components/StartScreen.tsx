@@ -330,15 +330,6 @@ export default function StartScreen() {
             ))}
           </div>
         )}
-
-        {/* Features */}
-        <div className="flex gap-4 mt-2 text-xs flex-wrap justify-center" style={{ color: 'rgba(160,144,112,0.7)' }}>
-          <span>🗺 AI 세계 생성</span>
-          <span>👥 20명 NPC</span>
-          <span>🎨 애니 일러스트</span>
-          <span>📖 몰입형 서사</span>
-          <span>💾 자동 저장</span>
-        </div>
       </div>
 
       {/* Bottom border */}

@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express'
 import * as claude from '../services/claude.service'
 import * as imageService from '../services/image.service'
 import { buildHeroAppearance } from '../services/claude.service'
+import { AETERNOVA_WORLD, AETERNOVA_NARRATIVE, MAP_IMAGE_PROMPT } from '../../src/data/aeternova-world'
+import { AETERNOVA_NPCS } from '../../src/data/aeternova-npcs'
 import {
   saveConfig,
   saveWorld, loadWorld,
@@ -96,15 +98,19 @@ router.post('/config', async (req: Request, res: Response) => {
 // ================================================================
 // POST /api/world/generate — Step 1: Generate world only
 // ================================================================
-router.post('/world/generate', async (req: Request, res: Response) => {
+router.post('/world/generate', async (_req: Request, res: Response) => {
+  // 에테르노바 하드코딩 데이터를 즉시 반환 — AI 생성 불필요
   try {
-    const { anthropic: anthropicKey } = getRequestKeys(req)
-    const world = await claude.generateWorld(anthropicKey)
-    console.log(`[API] World created: ${world.name}`)
+    const existing = await loadWorld().catch(() => null)
+    const world: WorldData = {
+      ...AETERNOVA_WORLD,
+      mapImageUrl: existing?.mapImageUrl ?? AETERNOVA_WORLD.mapImageUrl,
+    }
+    console.log(`[API] World loaded: ${world.name} (hardcoded Aeternova)`)
     saveWorld(world).catch(() => {})
     res.json({ world })
   } catch (err) {
-    console.error('[API] World generation error:', err)
+    console.error('[API] World load error:', err)
     res.status(500).json({ error: apiError(err) })
   }
 })
@@ -112,48 +118,39 @@ router.post('/world/generate', async (req: Request, res: Response) => {
 // ================================================================
 // POST /api/npcs/generate — Step 2: Generate NPCs
 // ================================================================
-router.post('/npcs/generate', async (req: Request, res: Response) => {
-  const { world } = req.body as { world: WorldData }
-  if (!world) return res.status(400).json({ error: 'world required' })
-  try {
-    const { anthropic: anthropicKey } = getRequestKeys(req)
-    const npcs = await claude.generateNPCs(world, anthropicKey)
-    console.log(`[API] NPCs created: ${npcs.length}`)
-    saveNPCs(npcs).catch(() => {})
-    res.json({ npcs })
-  } catch (err) {
-    console.error('[API] NPC generation error:', err)
-    res.status(500).json({ error: apiError(err) })
-  }
+router.post('/npcs/generate', async (_req: Request, res: Response) => {
+  // 에테르노바 하드코딩 NPC 125명 즉시 반환
+  const npcs = AETERNOVA_NPCS
+  console.log(`[API] NPCs loaded: ${npcs.length} (hardcoded Aeternova)`)
+  saveNPCs(npcs).catch(() => {})
+  res.json({ npcs })
 })
 
 // ================================================================
 // POST /api/narrative/generate — Step 3: Generate narrative
 // ================================================================
-router.post('/narrative/generate', async (req: Request, res: Response) => {
-  const { world } = req.body as { world: WorldData }
-  if (!world) return res.status(400).json({ error: 'world required' })
-  try {
-    const { anthropic: anthropicKey } = getRequestKeys(req)
-    const narrative = await claude.generateNarrative(world, anthropicKey)
-    console.log('[API] Narrative created')
-    saveNarrative(narrative).catch(() => {})
-    res.json({ narrative })
-  } catch (err) {
-    console.error('[API] Narrative generation error:', err)
-    res.status(500).json({ error: apiError(err) })
-  }
+router.post('/narrative/generate', async (_req: Request, res: Response) => {
+  // 에테르노바 하드코딩 서사 즉시 반환
+  const narrative = AETERNOVA_NARRATIVE
+  console.log('[API] Narrative loaded (hardcoded Aeternova)')
+  saveNarrative(narrative).catch(() => {})
+  res.json({ narrative })
 })
 
 // ================================================================
 // POST /api/map/generate — Step 4 (optional): Generate map image
 // ================================================================
 router.post('/map/generate', async (req: Request, res: Response) => {
-  const { world } = req.body as { world: WorldData }
-  if (!world) return res.status(400).json({ error: 'world required' })
+  // 에테르노바 전용 맵 이미지 생성 — 상세 프롬프트 사용
   try {
     const { fal: falKey } = getRequestKeys(req)
-    const mapImageUrl = await imageService.generateMapImage(world.name, world.lore, world.continents, falKey)
+    const mapImageUrl = await imageService.generateMapImageWithPrompt(MAP_IMAGE_PROMPT, falKey)
+    // 생성된 URL을 world 데이터에 저장
+    const existing = await loadWorld().catch(() => null)
+    if (existing) {
+      const updatedWorld = { ...existing, mapImageUrl }
+      saveWorld(updatedWorld).catch(() => {})
+    }
     res.json({ mapImageUrl })
   } catch (err) {
     console.error('[API] Map generation error:', err)
@@ -205,7 +202,7 @@ router.post('/character/backgrounds', async (req: Request, res: Response) => {
 // POST /api/session/create — Generate initial scene (stateless)
 // ================================================================
 router.post('/session/create', async (req: Request, res: Response) => {
-  const { name, age, gender, characterClass, backstory, worldData, narrative } = req.body as {
+  const { name, age, gender, characterClass, backstory, worldData, narrative, startingLocation } = req.body as {
     name: string
     age: number
     gender: string
@@ -213,6 +210,14 @@ router.post('/session/create', async (req: Request, res: Response) => {
     backstory: string
     worldData: WorldData
     narrative: string
+    startingLocation?: {
+      id: string
+      name: string
+      continent: string
+      description: string
+      atmosphere: string
+      imagePromptBase: string
+    }
   }
 
   if (!name || !characterClass || !worldData || !narrative) {
@@ -235,7 +240,11 @@ router.post('/session/create', async (req: Request, res: Response) => {
 
   try {
     const { anthropic: anthropicKey } = getRequestKeys(req)
-    const initialResponse = await claude.generateInitialScene(worldData, narrative, character, anthropicKey)
+    // 시작 위치 주변 NPC 샘플 (최대 8명) — 초기 장면 분위기용
+    const locationNpcs = AETERNOVA_NPCS
+      .filter(n => n.nationality.includes(startingLocation?.continent ?? ''))
+      .slice(0, 5)
+    const initialResponse = await claude.generateInitialScene(worldData, narrative, character, anthropicKey, startingLocation, locationNpcs)
 
     // 초기 텍스트를 먼저 보여주기 위해 이미지는 별도 API에서 비동기로 생성
     res.json({
@@ -360,11 +369,27 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     // ── Resolve scene image from cache ─────────────────────────
     let sceneImageUrl: string | null = null
     let sceneImagePending = false
+    let shouldGenerateSceneImage = false
+
+    const latestHistorySceneImage = [...(history ?? [])]
+      .reverse()
+      .find(m => !!m.sceneImageUrl)?.sceneImageUrl ?? null
 
     if (response.reuse_scene_image) {
-      sceneImageUrl = null                              // client keeps previous
+      const cachedSceneImage = sceneTag ? sceneTagCache?.[sceneTag] : undefined
+      if (cachedSceneImage) {
+        sceneImageUrl = cachedSceneImage
+      } else if (latestHistorySceneImage) {
+        // Reuse the latest resolved scene image when Claude says the scene is unchanged.
+        sceneImageUrl = latestHistorySceneImage
+      } else {
+        // No reusable image is available; generate one so the message still has an image.
+        sceneImagePending = true
+        shouldGenerateSceneImage = true
+      }
     } else {
-      sceneImagePending = true                          // always generate fresh image
+      sceneImagePending = true
+      shouldGenerateSceneImage = true
     }
 
     // ── Resolve NPC portrait from cache ────────────────────────
@@ -417,7 +442,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     // ── Generate images async, send events when ready ──────────
     const pendingTasks: Promise<void>[] = []
 
-    if (sceneImagePending) {
+    if (shouldGenerateSceneImage) {
       sendEvent({ type: 'status', stage: 'scene_image_generating', message: '장면 이미지를 생성하고 있습니다.' })
       // 현재 장면에 있는 NPC 객체를 찾아 외모 데이터를 이미지 프롬프트에 포함
       const sceneNpcs = (response.available_npcs ?? [])
@@ -438,7 +463,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
           .then(url => { sendEvent({ type: 'image', sceneImageUrl: url, sceneTag }) })
           .catch(err => {
             console.error('[Image] Generation failed:', err)
-            sendEvent({ type: 'image', sceneImageUrl: null, sceneTag })
+            sendEvent({ type: 'image', sceneImageUrl: latestHistorySceneImage, sceneTag })
           })
       )
     }
@@ -503,12 +528,38 @@ router.post('/game/action', async (req: Request, res: Response) => {
 
     // ── Scene image: 3-level reuse check ──────────────────────────
     let sceneImageUrl: string | null = null
+    const latestHistorySceneImage = [...(history ?? [])]
+      .reverse()
+      .find(m => !!m.sceneImageUrl)?.sceneImageUrl ?? null
     const sceneTag = response.scene_tag ?? ''
 
     if (response.reuse_scene_image) {
-      // Claude says scene unchanged → skip (client keeps previous)
-      sceneImageUrl = null
-      console.log(`[Image] Reuse scene (unchanged): ${sceneTag}`)
+      const cachedSceneImage = sceneTag ? sceneTagCache?.[sceneTag] : undefined
+      if (cachedSceneImage) {
+        sceneImageUrl = cachedSceneImage
+        console.log(`[Image] Reuse scene (cache hit): ${sceneTag}`)
+      } else if (latestHistorySceneImage) {
+        sceneImageUrl = latestHistorySceneImage
+        console.log(`[Image] Reuse latest scene (history): ${sceneTag}`)
+      } else {
+        // Scene is unchanged but we still need an image for this message.
+        const allNpcsForImage = [...(npcs ?? [])]
+        if (response.new_npc) allNpcsForImage.push(response.new_npc)
+        const sceneNpcs = (response.available_npcs ?? [])
+          .map((id: string) => allNpcsForImage.find(n => n.id === id))
+          .filter((n): n is NPC => !!n)
+        const heroApp = character ? buildHeroAppearance(character) : undefined
+        sceneImageUrl = await imageService.generateEnhancedSceneImage(
+          response.scene_description,
+          response.visual_direction ?? null,
+          sceneNpcs,
+          heroApp,
+          response.current_location ?? currentLocation,
+          response.weather ?? currentWeather,
+          falKey
+        )
+        console.log(`[Image] Generated fallback scene (no reusable source): ${sceneTag}`)
+      }
     } else {
       // Always generate fresh image when scene changes
       const allNpcsForImage = [...(npcs ?? [])]
@@ -596,9 +647,8 @@ router.get('/world', async (_req: Request, res: Response) => {
 // GET /api/npcs — Load NPCs from server disk
 // ================================================================
 router.get('/npcs', async (_req: Request, res: Response) => {
-  try {
-    const npcs = await loadNPCs()
-    res.json({ npcs })
+  res.json({ npcs: AETERNOVA_NPCS })
+})
   } catch (err) {
     res.status(500).json({ error: String(err) })
   }

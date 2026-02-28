@@ -284,39 +284,6 @@ const WEATHER_TAGS: Record<string, string> = {
   '사막열풍': 'swirling sand dust storm, harsh blazing sunlight, shimmering heat haze, desert winds',
 }
 
-// ================================================================
-// IMAGE FALLBACK CACHE
-// fal.ai 실패 시 이전 이미지를 재사용
-// ================================================================
-const _imageCache: Map<string, string> = new Map()
-
-export function setCachedImage(key: string, url: string): void {
-  _imageCache.set(key, url)
-}
-
-export function getCachedImage(key: string): string | undefined {
-  return _imageCache.get(key)
-}
-
-// 이미지 생성 실패 시 같은 scene_tag의 이전 이미지 반환
-export function getLastSceneImage(sceneTag: string): string | undefined {
-  return _imageCache.get(`scene:${sceneTag}`) ?? _imageCache.get('scene:last')
-}
-
-export function getLastBackgroundImage(locationKey: string): string | undefined {
-  return _imageCache.get(`bg:${locationKey}`) ?? _imageCache.get('bg:last')
-}
-
-export function cacheSceneImage(sceneTag: string, url: string): void {
-  _imageCache.set(`scene:${sceneTag}`, url)
-  _imageCache.set('scene:last', url)
-}
-
-export function cacheBackgroundImage(locationKey: string, url: string): void {
-  _imageCache.set(`bg:${locationKey}`, url)
-  _imageCache.set('bg:last', url)
-}
-
 export async function generateEnhancedSceneImage(
   sceneDescription: string,
   direction?: VisualDirection | null,
@@ -388,13 +355,6 @@ export async function generateEnhancedSceneImage(
     return result.data?.images?.[0]?.url ?? placeholderDataUrl('scene', sceneDescription.slice(0, 40))
   } catch (err) {
     console.error('[Image] Enhanced scene generation failed:', err)
-    // 캐시된 이전 이미지 사용 (폴백)
-    const sceneTag = (err as any)?.sceneTag
-    const cached = getLastSceneImage(sceneTag ?? '')
-    if (cached) {
-      console.warn('[Image] Falling back to cached scene image')
-      return cached
-    }
     return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
   }
 }
@@ -406,79 +366,34 @@ export async function generateSceneImage(sceneDescription: string): Promise<stri
 }
 
 // ================================================================
-// BACKGROUND IMAGE (환경 배경용) - 인물 없는 순수 배경
-// 데스크탑 화면 뒤에 표시되는 이미지
+// 에테르노바 전용 맵 이미지 생성 — 상세 프롬프트 직접 사용
 // ================================================================
-export async function generateBackgroundImage(
-  currentLocation: string,
-  weather?: string,
-  timeOfDay?: string,
-  sceneDescription?: string,
+export async function generateMapImageWithPrompt(
+  fullPrompt: string,
   falKeyOverride?: string
 ): Promise<string> {
   const falKey = falKeyOverride ?? process.env.FAL_KEY
-  if (!falKey) return placeholderDataUrl('scene', currentLocation.slice(0, 40))
+  if (!falKey) {
+    return placeholderDataUrl('map', 'Aeternova')
+  }
 
   try {
     fal.config({ credentials: falKey })
-
-    const locationTag = resolveLocationTag(currentLocation)
-    const weatherTag = weather ? (WEATHER_TAGS[weather] ?? '') : ''
-
-    const timeTagMap: Record<string, string> = {
-      'dawn': 'dawn light, pale golden horizon, misty morning air',
-      'morning': 'bright morning sunlight, clear sky, fresh atmosphere',
-      'afternoon': 'warm afternoon sun, high sky, vibrant daylight',
-      'dusk': 'dramatic sunset orange sky, long shadows, golden hour',
-      'night': 'moonlit night, star-filled sky, soft blue darkness',
-      'midnight': 'deep midnight darkness, only moonlight and stars, still quiet atmosphere',
-    }
-    const timeTag = timeOfDay ? (timeTagMap[timeOfDay] ?? '') : ''
-
-    // 배경 전용 프롬프트 — 인물 없음, 환경 극대화
-    const promptParts = [
-      'anime illustration style, visual novel background art, highly detailed environment, no humans, no characters, no people,',
-      'medieval fantasy world,',
-      locationTag || `fantasy location: ${currentLocation}`,
-      timeTag,
-      weatherTag,
-      'wide establishing shot, cinematic perspective, rich atmospheric depth,',
-      'immersive world-building, detailed architecture and nature,',
-      sceneDescription ? sceneDescription.slice(0, 100) : '',
-      'ultra detailed, masterpiece background',
-    ].filter(Boolean)
-
-    const prompt = promptParts.join(' ')
-    console.log(`[Image/BG] Background prompt | loc=${currentLocation} | weather=${weather ?? '-'} | time=${timeOfDay ?? '-'}`)
-
-    const result = await fal.subscribe('fal-ai/flux/schnell', {
+    const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {
-        prompt,
+        prompt: `${SDXL_PREFIX}${fullPrompt}`,
+        negative_prompt: ANIMAGINE_NEGATIVE,
         image_size: 'landscape_16_9',
-        num_inference_steps: 4,
+        num_inference_steps: 32,
+        guidance_scale: 7.5,
+        scheduler: 'Euler a',
         enable_safety_checker: false,
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.data?.images?.[0]?.url ?? placeholderDataUrl('scene', currentLocation.slice(0, 40))
+    return result.data?.images?.[0]?.url ?? placeholderDataUrl('map', 'Aeternova')
   } catch (err) {
-    console.error('[Image] Background generation failed:', err)
-    // 캐시된 이전 배경 이미지 사용 (폴백)
-    const cached = getLastBackgroundImage(currentLocation)
-    if (cached) {
-      console.warn('[Image] Falling back to cached background image')
-      return cached
-    }
-    return placeholderDataUrl('scene', currentLocation.slice(0, 40))
+    console.error('[Image] Aeternova map generation failed:', err)
+    return placeholderDataUrl('map', 'Aeternova')
   }
 }
-
-// ================================================================
-// SCENE IMAGE (씬 이미지) - 인물 포함 장면 묘사
-// 텍스트 박스 안에 표시되는 이미지
-// generateEnhancedSceneImage는 기존 그대로 씬 이미지 담당
-// ================================================================
-// 두 함수의 역할 정리:
-// generateBackgroundImage  → 배경 전용 (인물 없음, wide shot, 환경 집중)
-// generateEnhancedSceneImage → 씬 전용 (인물 포함, 장면 묘사, 감정 집중)
-
