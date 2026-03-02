@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express'
+import { getCharacterImageUrl, getLocationImageUrl, getNpcFolder } from '../services/r2_service'
 import * as claude from '../services/claude.service'
 import * as imageService from '../services/image.service'
 import { buildHeroAppearance } from '../services/claude.service'
@@ -283,15 +284,11 @@ router.post('/session/initial-image', async (req: Request, res: Response) => {
   try {
     const { fal: falKey } = getRequestKeys(req)
     const heroApp = buildHeroAppearance(character)
-    const sceneImageUrl = await imageService.generateEnhancedSceneImage(
-      sceneDescription,
-      visualDirection ?? null,
-      [],
-      heroApp,
-      currentLocation,
-      weather ?? undefined,
-      falKey
-    )
+    const sceneImageUrl = getLocationImageUrl(currentLocation ?? '') 
+      ?? await imageService.generateEnhancedSceneImage(
+          sceneDescription, visualDirection ?? null, [], heroApp,
+          currentLocation, weather ?? undefined, falKey
+        )
 
     res.json({ sceneImageUrl })
   } catch (err) {
@@ -404,16 +401,11 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
       const npc = allNpcs.find(n => n.id === response.npc_speaking)
       if (npc) {
         const emotion = response.npc_emotion ?? 'neutral'
-        const cacheKey = `${npc.id}_${emotion}`
-        const cachedPortrait = npcPortraitCache?.[cacheKey]
-        if (cachedPortrait) {
-          npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: cachedPortrait }
-        } else {
-          const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
-            ?? npc.emotions[0]?.description ?? 'neutral expression'
-          npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: null }
-          pendingPortrait = { npc, emotion, emotionDesc }
-        }
+        const intensity = response.visual_direction?.intensity ?? 'routine'
+        const charFolder = getNpcFolder(npc, allNpcs)
+        // 항상 R2에서 즉시 URL 생성 (fal.ai 호출 없음)
+        const r2PortraitUrl = getCharacterImageUrl(charFolder, emotion, intensity)
+        npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: r2PortraitUrl }
       }
     }
 
@@ -443,40 +435,16 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     const pendingTasks: Promise<void>[] = []
 
     if (shouldGenerateSceneImage) {
-      sendEvent({ type: 'status', stage: 'scene_image_generating', message: '장면 이미지를 생성하고 있습니다.' })
-      // 현재 장면에 있는 NPC 객체를 찾아 외모 데이터를 이미지 프롬프트에 포함
-      const sceneNpcs = (response.available_npcs ?? [])
-        .map((id: string) => allNpcs.find(n => n.id === id))
-        .filter((n): n is NPC => !!n)
-      const heroApp = character ? buildHeroAppearance(character) : undefined
-
-      pendingTasks.push(
-        imageService.generateEnhancedSceneImage(
-          response.scene_description,
-          response.visual_direction ?? null,
-          sceneNpcs,
-          heroApp,
-          response.current_location ?? currentLocation,
-          response.weather ?? currentWeather,
-          falKey
-        )
-          .then(url => { sendEvent({ type: 'image', sceneImageUrl: url, sceneTag }) })
-          .catch(err => {
-            console.error('[Image] Generation failed:', err)
-            sendEvent({ type: 'image', sceneImageUrl: latestHistorySceneImage, sceneTag })
-          })
-      )
+      // R2에서 위치 기반 배경 이미지 즉시 반환
+      const r2SceneUrl = getLocationImageUrl(response.current_location ?? currentLocation ?? '')
+      if (r2SceneUrl) {
+        sendEvent({ type: 'image', sceneImageUrl: r2SceneUrl, sceneTag })
+      } else if (latestHistorySceneImage) {
+        sendEvent({ type: 'image', sceneImageUrl: latestHistorySceneImage, sceneTag })
+      }
     }
 
-    if (pendingPortrait) {
-      sendEvent({ type: 'status', stage: 'portrait_generating', message: 'NPC 초상화를 생성하고 있습니다.' })
-      const { npc, emotion, emotionDesc } = pendingPortrait
-      pendingTasks.push(
-        imageService.generateNpcEmotion(npc, emotion, emotionDesc, falKey)
-          .then(url => { sendEvent({ type: 'portrait', npcId: npc.id, emotion, portraitUrl: url }) })
-          .catch(err => { console.error('[Portrait] Generation failed:', err) })
-      )
-    }
+    // 포트레이트는 npcData에 이미 R2 URL이 포함되어 done 이벤트와 함께 전송됨
 
     await Promise.all(pendingTasks)
     sendEvent({ type: 'complete' })
@@ -549,16 +517,13 @@ router.post('/game/action', async (req: Request, res: Response) => {
           .map((id: string) => allNpcsForImage.find(n => n.id === id))
           .filter((n): n is NPC => !!n)
         const heroApp = character ? buildHeroAppearance(character) : undefined
-        sceneImageUrl = await imageService.generateEnhancedSceneImage(
-          response.scene_description,
-          response.visual_direction ?? null,
-          sceneNpcs,
-          heroApp,
-          response.current_location ?? currentLocation,
-          response.weather ?? currentWeather,
-          falKey
-        )
-        console.log(`[Image] Generated fallback scene (no reusable source): ${sceneTag}`)
+        sceneImageUrl = getLocationImageUrl(response.current_location ?? currentLocation ?? '')
+          ?? await imageService.generateEnhancedSceneImage(
+              response.scene_description, response.visual_direction ?? null,
+              sceneNpcs, heroApp, response.current_location ?? currentLocation,
+              response.weather ?? currentWeather, falKey
+            )
+        console.log(`[Image] Resolved fallback scene: ${sceneTag}`)
       }
     } else {
       // Always generate fresh image when scene changes
@@ -569,16 +534,13 @@ router.post('/game/action', async (req: Request, res: Response) => {
         .filter((n): n is NPC => !!n)
       const heroApp = character ? buildHeroAppearance(character) : undefined
 
-      sceneImageUrl = await imageService.generateEnhancedSceneImage(
-        response.scene_description,
-        response.visual_direction ?? null,
-        sceneNpcs,
-        heroApp,
-        response.current_location ?? currentLocation,
-        response.weather ?? currentWeather,
-        falKey
-      )
-      console.log(`[Image] Generated new scene: ${sceneTag}`)
+      sceneImageUrl = getLocationImageUrl(response.current_location ?? currentLocation ?? '')
+        ?? await imageService.generateEnhancedSceneImage(
+            response.scene_description, response.visual_direction ?? null,
+            sceneNpcs, heroApp, response.current_location ?? currentLocation,
+            response.weather ?? currentWeather, falKey
+          )
+      console.log(`[Image] Resolved new scene: ${sceneTag}`)
     }
 
     // 즉석 생성된 새 NPC가 있으면 목록에 포함
@@ -600,8 +562,9 @@ router.post('/game/action', async (req: Request, res: Response) => {
         } else {
           const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
             ?? npc.emotions[0]?.description ?? 'neutral expression'
-          portraitUrl = await imageService.generateNpcEmotion(npc, emotion, emotionDesc, falKey)
-          console.log(`[Image] Generated NPC portrait: ${cacheKey}`)
+          const intensity = response.visual_direction?.intensity ?? 'routine'
+          portraitUrl = getCharacterImageUrl(getNpcFolder(npc, allNpcs), emotion, intensity)
+          console.log(`[Image] R2 NPC portrait: ${cacheKey}`)
         }
 
         npcData = {
