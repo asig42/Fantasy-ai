@@ -393,9 +393,16 @@ const GM_JSON_FORMAT = `{
 // - 제거할 때: action="remove" + 기존 id 사용
 // - 변화 없으면 null
 
-const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
-- 위 NPC 목록에 없는 새 인물이 이야기에 등장해야 할 때만 new_npc 필드를 채우세요
-- 기존 NPC와 상호작용할 때는 new_npc를 null로 두세요
+const NEW_NPC_RULES = `## NPC 등장 규칙 (반드시 준수)
+
+### 우선순위 1: 기존 130명 NPC를 먼저 활용하라
+- 스토리에 NPC가 필요할 때는 반드시 위 "주요 NPC 목록"에서 먼저 찾아라
+- 장소에 어울리는 NPC가 목록에 있으면 그 NPC를 등장시켜라 (예: 선술집 → 술집 관련 NPC, 왕궁 → 귀족/왕족 NPC)
+- new_npc는 목록의 130명 중 어느 누구도 이 역할에 맞지 않을 때에만 사용하라
+- 일반 행인, 상인, 경비병처럼 이름 없는 단역도 new_npc로 만들지 말고 narration 텍스트로만 처리하라
+
+### 우선순위 2: new_npc 생성 조건
+- 오직 스토리상 중요한 신규 인물이 필요하고, 기존 목록에 적합한 NPC가 없을 때만 허용
 - new_npc를 생성할 경우 npc_speaking에 그 id를 사용하세요
 - new_npc 형식:
 {
@@ -501,10 +508,10 @@ function buildStaticSystemPrompt(world: WorldData, npcs: NPC[], narrative: strin
     세계: ${world.name}
     세계 배경: ${world.lore}
     
-    ## 주요 NPC 목록
+    ## 주요 NPC 목록 (총 130명 - NPC가 필요하면 반드시 여기서 먼저 선택할 것)
     ${npcSummary}
+    (중요: 목록에 적합한 NPC가 있으면 절대 new_npc 생성 금지. 목록의 NPC를 우선 등장시킬 것.)
     (주의: NPC들은 위 수위 지침에 따라 훨씬 더 대담하고 유혹적이거나 위압적인 태도를 취할 수 있습니다.)
-    
     ## 메인 서사
     ${narrative.slice(0, 500)}...
     
