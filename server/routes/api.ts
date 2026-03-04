@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { getCharacterImageUrl, getLocationImageUrl, getNpcFolder } from '../services/r2_service'
+import { getCharacterImageUrl, getLocationImageUrl, getNpcFolder, isPreDefinedNpc } from '../services/r2_service'
 import * as claude from '../services/claude.service'
 import * as imageService from '../services/image.service'
 import { buildHeroAppearance } from '../services/claude.service'
@@ -306,7 +306,7 @@ router.post('/session/initial-image', async (req: Request, res: Response) => {
 router.post('/game/action/stream', async (req: Request, res: Response) => {
   const {
     worldData, npcs, narrative, character, history, input, currentLocation, currentWeather,
-    sceneTagCache, npcPortraitCache,
+    sceneTagCache, npcPortraitCache, nsfwEnabled,
   } = req.body as {
     worldData: WorldData
     npcs: NPC[]
@@ -318,6 +318,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     currentWeather?: string
     sceneTagCache?: Record<string, string>
     npcPortraitCache?: Record<string, string>
+    nsfwEnabled?: boolean
   }
 
   if (!worldData || !input?.trim()) {
@@ -339,15 +340,18 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     sendEvent({ type: 'heartbeat', ts: Date.now() })
   }, 5000)
 
+  const abortCtrl = new AbortController()
+
   req.on('close', () => {
     clearInterval(heartbeat)
+    abortCtrl.abort()
   })
 
   try {
     const { anthropic: anthropicKey, fal: falKey } = getRequestKeys(req)
     const gen = claude.processGameActionStream(
       worldData, npcs ?? [], narrative ?? '',
-      character, history ?? [], input, currentLocation ?? '', anthropicKey
+      character, history ?? [], input, currentLocation ?? '', anthropicKey, abortCtrl.signal
     )
 
     let response = null
@@ -402,9 +406,16 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
       if (npc) {
         const emotion = response.npc_emotion ?? 'neutral'
         const intensity = response.visual_direction?.intensity ?? 'routine'
-        const charFolder = getNpcFolder(npc, allNpcs)
-        // 항상 R2에서 즉시 URL 생성 (fal.ai 호출 없음)
-        const r2PortraitUrl = getCharacterImageUrl(charFolder, emotion, intensity)
+        // 사전 정의 NPC(001~125)만 R2 이미지 사용 — 런타임 생성 NPC는 null
+        const loc = response.current_location ?? currentLocation ?? ''
+        const nsfwCtx = nsfwEnabled
+          ? [loc, response.narration?.slice(0, 200) ?? '']
+          : []
+        const r2PortraitUrl = isPreDefinedNpc(npc.id)
+          ? getCharacterImageUrl(getNpcFolder(npc), emotion, intensity, loc, !!nsfwEnabled, nsfwCtx)
+          : null
+        const mode = nsfwEnabled ? 'nsfw' : 'sfw'
+        console.log(`[NPC] ${npc.name} (${npc.id}) | ${mode} | emotion=${emotion} | loc=${loc} | url=${r2PortraitUrl ?? 'none'}`)
         npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: r2PortraitUrl }
       }
     }
@@ -464,7 +475,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
 router.post('/game/action', async (req: Request, res: Response) => {
   const {
     worldData, npcs, narrative, character, history, input, currentLocation, currentWeather,
-    sceneTagCache, npcPortraitCache,
+    sceneTagCache, npcPortraitCache, nsfwEnabled,
   } = req.body as {
     worldData: WorldData
     npcs: NPC[]
@@ -476,6 +487,7 @@ router.post('/game/action', async (req: Request, res: Response) => {
     currentWeather?: string
     sceneTagCache?: Record<string, string>   // scene_tag → imageUrl
     npcPortraitCache?: Record<string, string> // "{npcId}_{emotion}" → portraitUrl
+    nsfwEnabled?: boolean
   }
 
   if (!worldData || !input?.trim()) {
@@ -554,17 +566,22 @@ router.post('/game/action', async (req: Request, res: Response) => {
         const emotion = response.npc_emotion ?? 'neutral'
         const cacheKey = `${npc.id}_${emotion}`
 
-        // ── NPC portrait: cache check ──────────────────────────────
-        let portraitUrl: string
+        // ── NPC portrait: cache → R2 (사전 NPC만) ─────────────────
+        let portraitUrl: string | null = null
         if (npcPortraitCache?.[cacheKey]) {
           portraitUrl = npcPortraitCache[cacheKey]
           console.log(`[Image] Reuse NPC portrait (cache hit): ${cacheKey}`)
-        } else {
-          const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
-            ?? npc.emotions[0]?.description ?? 'neutral expression'
+        } else if (isPreDefinedNpc(npc.id)) {
           const intensity = response.visual_direction?.intensity ?? 'routine'
-          portraitUrl = getCharacterImageUrl(getNpcFolder(npc, allNpcs), emotion, intensity)
-          console.log(`[Image] R2 NPC portrait: ${cacheKey}`)
+          const loc = response.current_location ?? currentLocation ?? ''
+          const nsfwCtx = nsfwEnabled
+            ? [loc, response.narration?.slice(0, 200) ?? '']
+            : []
+          portraitUrl = getCharacterImageUrl(getNpcFolder(npc), emotion, intensity, loc, !!nsfwEnabled, nsfwCtx)
+          const mode = nsfwEnabled ? 'nsfw' : 'sfw'
+          console.log(`[NPC] ${npc.name} (${npc.id}) | ${mode} | emotion=${emotion} | loc=${loc} | url=${portraitUrl}`)
+        } else {
+          console.log(`[NPC] ${npc.name} (${npc.id}) — new NPC, no R2 image`)
         }
 
         npcData = {
