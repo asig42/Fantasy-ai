@@ -136,6 +136,10 @@ export async function generateNpcPortrait(
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
     const prompt = `${SDXL_PREFIX}full body character portrait, fantasy RPG character art, ${genderWord}, ${npc.appearance}, ${npc.title}, standing pose, detailed fantasy outfit, consistent character design, clean gradient background, visual novel character art style`
 
+    console.log(`[Image/Portrait] ─────────────────────────────────────────`)
+    console.log(`[Image/Portrait] NPC: ${npc.name} | PROMPT: ${prompt}`)
+    console.log(`[Image/Portrait] ─────────────────────────────────────────`)
+
     const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {
         prompt,
@@ -180,6 +184,10 @@ export async function generateNpcEmotion(
 
     const genderWord = npc.gender === '여성' ? 'female' : 'male'
     const prompt = `${SDXL_PREFIX}bust portrait, fantasy character, ${genderWord}, ${npc.appearance}, EXACTLY same character appearance and outfit, ${emotionMap[emotion] ?? emotion}, ${emotionDescription}, centered face, symmetrical facial features, detailed eyes, clean lineart, consistent character design, visual novel character art style, clean background`
+
+    console.log(`[Image/Emotion] ─────────────────────────────────────────`)
+    console.log(`[Image/Emotion] NPC: ${npc.name} | emotion: ${emotion} | PROMPT: ${prompt}`)
+    console.log(`[Image/Emotion] ─────────────────────────────────────────`)
 
     const result = await fal.subscribe('fal-ai/animagine-xl-v3-1', {
       input: {
@@ -306,7 +314,9 @@ export async function generateEnhancedSceneImage(
       // ── Use Claude's rich image_prompt directly ──────────────────
       // Claude already wrote a detailed anime illustration prompt — use it as-is.
       prompt = imagePrompt.trim()
-      console.log(`[Image/FLUX] Using Claude image_prompt (${prompt.length} chars) | loc=${currentLocation ?? '-'}`)
+      console.log(`[Image/FLUX] ─────────────────────────────────────────`)
+      console.log(`[Image/FLUX] PROMPT (Claude, ${prompt.length} chars): ${prompt}`)
+      console.log(`[Image/FLUX] ─────────────────────────────────────────`)
     } else {
       // ── Fallback: assemble prompt from tags ──────────────────────
       let npcAppearance = '';
@@ -340,7 +350,9 @@ export async function generateEnhancedSceneImage(
       ].filter(Boolean)
 
       prompt = fluxPromptParts.join(', ')
-      console.log(`[Image/FLUX] Fallback prompt | loc=${currentLocation ?? '-'} | weather=${weather ?? '-'} | shot=${direction?.camera_shot ?? 'auto'}`)
+      console.log(`[Image/FLUX] ─────────────────────────────────────────`)
+      console.log(`[Image/FLUX] PROMPT (Fallback): ${prompt}`)
+      console.log(`[Image/FLUX] ─────────────────────────────────────────`)
     }
 
     const result = await fal.subscribe('fal-ai/flux/schnell', {

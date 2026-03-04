@@ -243,6 +243,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   setError: (error) => set({ error }),
 
+  clearStreamFlags: () => set({ streamStatus: null, responseTruncated: false }),
+
   // ── Save API key ────────────────────────────────────────────
   saveApiKey: async (anthropicKey: string, falKey?: string) => {
     set({ error: null })

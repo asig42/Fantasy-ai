@@ -654,7 +654,7 @@ ${NEW_NPC_RULES}`
       }
     ] as any,
     messages: [{ role: 'user', content: userMessage }],
-  })
+  }, signal ? { signal } : undefined)
 
   const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
@@ -676,7 +676,8 @@ export async function* processGameActionStream(
   history: GameMessage[],
   playerInput: string,
   currentLocation: string,
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  signal?: AbortSignal
 ): AsyncGenerator<StreamEvent> {
   const historyText = buildHistoryText(history)
 
@@ -706,7 +707,11 @@ ${NEW_NPC_RULES}`
       }
     ] as any,
     messages: [{ role: 'user', content: userMessage }],
-  })
+  }, signal ? { signal } : undefined)
+
+  if (signal) {
+    signal.addEventListener('abort', () => { try { (stream as any).abort?.() } catch {} }, { once: true })
+  }
 
   let fullText = ''
   let narrationOffset = -1

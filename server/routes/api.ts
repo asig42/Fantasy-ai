@@ -339,15 +339,18 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     sendEvent({ type: 'heartbeat', ts: Date.now() })
   }, 5000)
 
+  const abortCtrl = new AbortController()
+
   req.on('close', () => {
     clearInterval(heartbeat)
+    abortCtrl.abort()
   })
 
   try {
     const { anthropic: anthropicKey, fal: falKey } = getRequestKeys(req)
     const gen = claude.processGameActionStream(
       worldData, npcs ?? [], narrative ?? '',
-      character, history ?? [], input, currentLocation ?? '', anthropicKey
+      character, history ?? [], input, currentLocation ?? '', anthropicKey, abortCtrl.signal
     )
 
     let response = null
