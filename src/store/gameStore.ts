@@ -189,6 +189,9 @@ interface GameStore {
   savedSessions: SessionSummary[]
   loadingSteps: LoadingStep[]
 
+  nsfwEnabled: boolean
+  toggleNsfw: () => void
+
   initGame: () => Promise<void>
   loadGameData: () => Promise<void>
   fetchBackgrounds: (cls: CharacterClass) => Promise<void>
@@ -240,6 +243,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
   hasApiKey: false,
   savedSessions: [],
   loadingSteps: INIT_STEPS.map(s => ({ ...s })),
+
+  nsfwEnabled: typeof localStorage !== 'undefined'
+    ? localStorage.getItem('nsfwEnabled') === 'true'
+    : false,
+  toggleNsfw: () => set(state => {
+    const next = !state.nsfwEnabled
+    localStorage.setItem('nsfwEnabled', String(next))
+    return { nsfwEnabled: next }
+  }),
 
   setError: (error) => set({ error }),
 
@@ -653,6 +665,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             currentWeather,
             sceneTagCache: sceneImageCache,
             npcPortraitCache,
+            nsfwEnabled: get().nsfwEnabled,
           }),
         })
 

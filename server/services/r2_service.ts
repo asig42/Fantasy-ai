@@ -2,9 +2,14 @@
  * r2_service.ts
  * Cloudflare R2 이미지 URL 생성 서비스
  *
- * R2 구조: sfw/{003_이름}/[씬].png
+ * SFW  R2 구조: sfw/{003_이름}/[씬].png
  *   씬 파일 (전 캐릭터 공통): portrait, happy, serious, action, talk
  *   씬 파일 (일부 캐릭터): library, market, tavern
+ *
+ * NSFW R2 구조: nsfw/{003_이름}/nsfw_NN_[씬].png
+ *   nsfw_01_tease, nsfw_02_bath, nsfw_03_lingerie, nsfw_04_onsen,
+ *   nsfw_05_morning, nsfw_06_dress, nsfw_07_wet, nsfw_08_swim,
+ *   nsfw_09_office, nsfw_10_bond
  */
 
 const R2_PUBLIC_URL = (
@@ -33,13 +38,52 @@ const INTENSITY_TO_SCENE: Record<string, string> = {
   dramatic: 'serious',
 }
 
-// ── 위치 키워드 → 캐릭터 씬 ID (intensity 없을 때 적용) ────────────
-// 해당 위치에서 NPC 대화 시 배경이 일치하는 씬 이미지 사용
+// ── 위치 키워드 → SFW 캐릭터 씬 ID (intensity 없을 때 적용) ─────────
 const LOCATION_TO_SCENE_MAP: Array<[string, string]> = [
   ['선술집', 'tavern'], ['tavern', 'tavern'], ['여관', 'tavern'], ['inn', 'tavern'],
   ['도서관', 'library'], ['library', 'library'],
   ['시장', 'market'], ['market', 'market'], ['상점', 'market'],
 ]
+
+// ── 컨텍스트 키워드 → NSFW 씬 ID ─────────────────────────────────────
+// location, narration, visual_direction 에서 매칭, 순서 = 우선순위
+const NSFW_CONTEXT_MAP: Array<[string, string]> = [
+  // 결박/감금
+  ['결박', 'nsfw_10_bond'], ['포박', 'nsfw_10_bond'], ['사슬', 'nsfw_10_bond'],
+  ['bond', 'nsfw_10_bond'], ['restrain', 'nsfw_10_bond'], ['captive', 'nsfw_10_bond'],
+  // 욕실/목욕
+  ['목욕', 'nsfw_02_bath'], ['욕실', 'nsfw_02_bath'], ['욕조', 'nsfw_02_bath'],
+  ['bath', 'nsfw_02_bath'], ['bathtub', 'nsfw_02_bath'],
+  // 온천
+  ['온천', 'nsfw_04_onsen'], ['노천탕', 'nsfw_04_onsen'], ['onsen', 'nsfw_04_onsen'],
+  // 수영/해변
+  ['수영', 'nsfw_08_swim'], ['수영장', 'nsfw_08_swim'], ['해수욕', 'nsfw_08_swim'],
+  ['swim', 'nsfw_08_swim'], ['pool', 'nsfw_08_swim'], ['beach', 'nsfw_08_swim'],
+  ['해변', 'nsfw_08_swim'],
+  // 빗속/젖음
+  ['폭우', 'nsfw_07_wet'], ['비 맞', 'nsfw_07_wet'], ['흠뻑', 'nsfw_07_wet'],
+  ['soaked', 'nsfw_07_wet'], ['drench', 'nsfw_07_wet'],
+  // 집무실/사무실
+  ['집무실', 'nsfw_09_office'], ['사무실', 'nsfw_09_office'], ['집무', 'nsfw_09_office'],
+  ['office', 'nsfw_09_office'], ['study', 'nsfw_09_office'], ['desk', 'nsfw_09_office'],
+  // 아침/침실
+  ['아침', 'nsfw_05_morning'], ['침대', 'nsfw_05_morning'], ['침실', 'nsfw_05_morning'],
+  ['기상', 'nsfw_05_morning'], ['morning', 'nsfw_05_morning'], ['bedroom', 'nsfw_05_morning'],
+  // 란제리/속옷 (침실이 아닌 명시적 란제리)
+  ['란제리', 'nsfw_03_lingerie'], ['속옷', 'nsfw_03_lingerie'], ['lingerie', 'nsfw_03_lingerie'],
+  // 드레스/갈아입기
+  ['드레스', 'nsfw_06_dress'], ['갈아입', 'nsfw_06_dress'], ['옷 벗', 'nsfw_06_dress'],
+  ['dress', 'nsfw_06_dress'], ['undress', 'nsfw_06_dress'],
+]
+
+/** 컨텍스트 문자열들에서 NSFW 씬 ID 결정 (없으면 기본값 tease) */
+function resolveNsfwScene(contexts: string[]): string {
+  const combined = contexts.join(' ').toLowerCase()
+  for (const [keyword, scene] of NSFW_CONTEXT_MAP) {
+    if (combined.includes(keyword.toLowerCase())) return scene
+  }
+  return 'nsfw_01_tease'  // 기본 NSFW 씬
+}
 
 // ── 위치 키워드 → locations 배경 이미지 파일명 ─────────────────────
 const LOCATION_MAP: Array<[string, string]> = [
@@ -93,37 +137,40 @@ export function getNpcFolder(npc: { id: string; name: string }): string {
 /**
  * 캐릭터 이미지 URL
  *
- * 씬 선택 우선순위:
+ * SFW 씬 선택 우선순위:
  *   1. intensity (climax→action, dramatic→serious)
- *   2. 현재 위치 기반 씬 (tavern, library, market)  ← 위치 immersion
+ *   2. 위치 기반 씬 (tavern, library, market)
  *   3. emotion 기반 씬 (happy, serious, talk, portrait)
  *
- * 한글·공백 포함 폴더명은 encodeURIComponent로 URL 인코딩
+ * NSFW 씬 선택:
+ *   - nsfwContexts(location, narration 등) 키워드 매칭 → nsfw_XX_scene
+ *   - 매칭 없으면 nsfw_01_tease (기본)
+ *   - 이미지 없는 씬은 프론트엔드 onError로 portrait fallback
+ *
+ * @param nsfwContexts  NSFW 모드 시 씬 결정에 사용할 컨텍스트 문자열 목록
  */
 export function getCharacterImageUrl(
   charFolder: string,
   emotion: string,
   intensity: string,
   currentLocation?: string,
-  isNsfw = false
+  isNsfw = false,
+  nsfwContexts: string[] = []
 ): string {
-  const category = isNsfw ? 'nsfw' : 'sfw'
-
-  // Priority 1: intensity override
-  let sceneId = INTENSITY_TO_SCENE[intensity]
-
-  // Priority 2: location-specific scene (action 씬이 아닐 때만)
-  if (!sceneId && currentLocation) {
-    sceneId = resolveLocationScene(currentLocation)
-  }
-
-  // Priority 3: emotion
-  if (!sceneId) {
-    sceneId = EMOTION_TO_SCENE[emotion] ?? 'talk'
-  }
-
   const encodedFolder = encodeURIComponent(charFolder)
-  return `${R2_PUBLIC_URL}/${category}/${encodedFolder}/${sceneId}.png`
+
+  if (isNsfw) {
+    const contexts = [currentLocation ?? '', ...nsfwContexts].filter(Boolean)
+    const sceneId = resolveNsfwScene(contexts)
+    return `${R2_PUBLIC_URL}/nsfw/${encodedFolder}/${sceneId}.png`
+  }
+
+  // SFW: Priority 1 intensity, 2 location, 3 emotion
+  let sceneId = INTENSITY_TO_SCENE[intensity]
+  if (!sceneId && currentLocation) sceneId = resolveLocationScene(currentLocation)
+  if (!sceneId) sceneId = EMOTION_TO_SCENE[emotion] ?? 'talk'
+
+  return `${R2_PUBLIC_URL}/sfw/${encodedFolder}/${sceneId}.png`
 }
 
 /**

@@ -306,7 +306,7 @@ router.post('/session/initial-image', async (req: Request, res: Response) => {
 router.post('/game/action/stream', async (req: Request, res: Response) => {
   const {
     worldData, npcs, narrative, character, history, input, currentLocation, currentWeather,
-    sceneTagCache, npcPortraitCache,
+    sceneTagCache, npcPortraitCache, nsfwEnabled,
   } = req.body as {
     worldData: WorldData
     npcs: NPC[]
@@ -318,6 +318,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
     currentWeather?: string
     sceneTagCache?: Record<string, string>
     npcPortraitCache?: Record<string, string>
+    nsfwEnabled?: boolean
   }
 
   if (!worldData || !input?.trim()) {
@@ -407,10 +408,14 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
         const intensity = response.visual_direction?.intensity ?? 'routine'
         // 사전 정의 NPC(001~125)만 R2 이미지 사용 — 런타임 생성 NPC는 null
         const loc = response.current_location ?? currentLocation ?? ''
+        const nsfwCtx = nsfwEnabled
+          ? [loc, response.narration?.slice(0, 200) ?? '']
+          : []
         const r2PortraitUrl = isPreDefinedNpc(npc.id)
-          ? getCharacterImageUrl(getNpcFolder(npc), emotion, intensity, loc)
+          ? getCharacterImageUrl(getNpcFolder(npc), emotion, intensity, loc, !!nsfwEnabled, nsfwCtx)
           : null
-        console.log(`[NPC] ${npc.name} (${npc.id}) | emotion=${emotion} | loc=${loc} | url=${r2PortraitUrl ?? 'none'}`)
+        const mode = nsfwEnabled ? 'nsfw' : 'sfw'
+        console.log(`[NPC] ${npc.name} (${npc.id}) | ${mode} | emotion=${emotion} | loc=${loc} | url=${r2PortraitUrl ?? 'none'}`)
         npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: r2PortraitUrl }
       }
     }
@@ -470,7 +475,7 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
 router.post('/game/action', async (req: Request, res: Response) => {
   const {
     worldData, npcs, narrative, character, history, input, currentLocation, currentWeather,
-    sceneTagCache, npcPortraitCache,
+    sceneTagCache, npcPortraitCache, nsfwEnabled,
   } = req.body as {
     worldData: WorldData
     npcs: NPC[]
@@ -482,6 +487,7 @@ router.post('/game/action', async (req: Request, res: Response) => {
     currentWeather?: string
     sceneTagCache?: Record<string, string>   // scene_tag → imageUrl
     npcPortraitCache?: Record<string, string> // "{npcId}_{emotion}" → portraitUrl
+    nsfwEnabled?: boolean
   }
 
   if (!worldData || !input?.trim()) {
@@ -568,8 +574,12 @@ router.post('/game/action', async (req: Request, res: Response) => {
         } else if (isPreDefinedNpc(npc.id)) {
           const intensity = response.visual_direction?.intensity ?? 'routine'
           const loc = response.current_location ?? currentLocation ?? ''
-          portraitUrl = getCharacterImageUrl(getNpcFolder(npc), emotion, intensity, loc)
-          console.log(`[NPC] ${npc.name} (${npc.id}) | emotion=${emotion} | loc=${loc} | url=${portraitUrl}`)
+          const nsfwCtx = nsfwEnabled
+            ? [loc, response.narration?.slice(0, 200) ?? '']
+            : []
+          portraitUrl = getCharacterImageUrl(getNpcFolder(npc), emotion, intensity, loc, !!nsfwEnabled, nsfwCtx)
+          const mode = nsfwEnabled ? 'nsfw' : 'sfw'
+          console.log(`[NPC] ${npc.name} (${npc.id}) | ${mode} | emotion=${emotion} | loc=${loc} | url=${portraitUrl}`)
         } else {
           console.log(`[NPC] ${npc.name} (${npc.id}) — new NPC, no R2 image`)
         }

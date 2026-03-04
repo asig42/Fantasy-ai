@@ -379,7 +379,7 @@ function StatsBar() {
 
 // ── Main GameScreen ───────────────────────────────────
 export default function GameScreen() {
-  const { messages, npcs, sendAction, isProcessing, streamingContent, suggestedActions, error, resetGame, currentScene, streamStatus, responseTruncated } = useGameStore()
+  const { messages, npcs, sendAction, isProcessing, streamingContent, suggestedActions, error, resetGame, currentScene, streamStatus, responseTruncated, nsfwEnabled, toggleNsfw } = useGameStore()
   const [input, setInput] = useState('')
   const [showMenu, setShowMenu] = useState(false)
   const [showInfoPanel, setShowInfoPanel] = useState(false)
@@ -448,12 +448,22 @@ export default function GameScreen() {
           </button>
 
           {showMenu && (
-            <div className="absolute top-full right-0 mt-1 w-36 fantasy-panel rounded-sm overflow-hidden"
+            <div className="absolute top-full right-0 mt-1 w-40 fantasy-panel rounded-sm overflow-hidden"
               style={{ zIndex: 50 }}>
               <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-white/5"
                 style={{ color: 'rgba(232,213,176,0.8)', borderBottom: '1px solid #1a1020' }}
                 onClick={() => { setShowMenu(false); setShowInfoPanel(true) }}>
                 📋 캐릭터 정보
+              </button>
+              <button className="w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors hover:bg-white/5"
+                style={{ color: nsfwEnabled ? '#e8a0bf' : 'rgba(160,144,112,0.7)', borderBottom: '1px solid #1a1020' }}
+                onClick={() => toggleNsfw()}>
+                <span>🔞 성인 이미지</span>
+                <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '2px',
+                  background: nsfwEnabled ? 'rgba(232,160,191,0.2)' : 'rgba(255,255,255,0.06)',
+                  color: nsfwEnabled ? '#e8a0bf' : 'rgba(160,144,112,0.5)' }}>
+                  {nsfwEnabled ? 'ON' : 'OFF'}
+                </span>
               </button>
               <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-red-900/20"
                 style={{ color: '#e74c3c' }}
@@ -477,8 +487,18 @@ export default function GameScreen() {
             ≡
           </button>
           {showMenu && (
-            <div className="absolute top-full right-0 mt-1 w-36 fantasy-panel rounded-sm overflow-hidden"
+            <div className="absolute top-full right-0 mt-1 w-40 fantasy-panel rounded-sm overflow-hidden"
               style={{ zIndex: 50 }}>
+              <button className="w-full flex items-center justify-between px-3 py-2.5 text-sm transition-colors hover:bg-white/5"
+                style={{ color: nsfwEnabled ? '#e8a0bf' : 'rgba(160,144,112,0.7)', borderBottom: '1px solid #1a1020' }}
+                onClick={() => toggleNsfw()}>
+                <span>🔞 성인 이미지</span>
+                <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '2px',
+                  background: nsfwEnabled ? 'rgba(232,160,191,0.2)' : 'rgba(255,255,255,0.06)',
+                  color: nsfwEnabled ? '#e8a0bf' : 'rgba(160,144,112,0.5)' }}>
+                  {nsfwEnabled ? 'ON' : 'OFF'}
+                </span>
+              </button>
               <button className="w-full text-left px-3 py-2.5 text-sm transition-colors hover:bg-red-900/20"
                 style={{ color: '#e74c3c' }}
                 onClick={() => {
