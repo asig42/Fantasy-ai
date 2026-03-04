@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express'
-import { getCharacterImageUrl, getLocationImageUrl, getNpcFolder } from '../services/r2_service'
+import { getCharacterImageUrl, getLocationImageUrl, getNpcFolder, isPreDefinedNpc } from '../services/r2_service'
 import * as claude from '../services/claude.service'
 import * as imageService from '../services/image.service'
 import { buildHeroAppearance } from '../services/claude.service'
@@ -405,9 +405,11 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
       if (npc) {
         const emotion = response.npc_emotion ?? 'neutral'
         const intensity = response.visual_direction?.intensity ?? 'routine'
-        const charFolder = getNpcFolder(npc, allNpcs)
-        // 항상 R2에서 즉시 URL 생성 (fal.ai 호출 없음)
-        const r2PortraitUrl = getCharacterImageUrl(charFolder, emotion, intensity)
+        // 사전 정의 NPC(001~125)만 R2 이미지 사용 — 런타임 생성 NPC는 null
+        const r2PortraitUrl = isPreDefinedNpc(npc.id)
+          ? getCharacterImageUrl(getNpcFolder(npc), emotion, intensity)
+          : null
+        console.log(`[NPC] ${npc.name} (${npc.id}) | emotion=${emotion} | intensity=${intensity} | r2=${r2PortraitUrl ?? 'none (new npc)'}`)
         npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: r2PortraitUrl }
       }
     }
@@ -557,17 +559,17 @@ router.post('/game/action', async (req: Request, res: Response) => {
         const emotion = response.npc_emotion ?? 'neutral'
         const cacheKey = `${npc.id}_${emotion}`
 
-        // ── NPC portrait: cache check ──────────────────────────────
-        let portraitUrl: string
+        // ── NPC portrait: cache → R2 (사전 NPC만) ─────────────────
+        let portraitUrl: string | null = null
         if (npcPortraitCache?.[cacheKey]) {
           portraitUrl = npcPortraitCache[cacheKey]
           console.log(`[Image] Reuse NPC portrait (cache hit): ${cacheKey}`)
-        } else {
-          const emotionDesc = npc.emotions.find(e => e.emotion === emotion)?.description
-            ?? npc.emotions[0]?.description ?? 'neutral expression'
+        } else if (isPreDefinedNpc(npc.id)) {
           const intensity = response.visual_direction?.intensity ?? 'routine'
-          portraitUrl = getCharacterImageUrl(getNpcFolder(npc, allNpcs), emotion, intensity)
-          console.log(`[Image] R2 NPC portrait: ${cacheKey}`)
+          portraitUrl = getCharacterImageUrl(getNpcFolder(npc), emotion, intensity)
+          console.log(`[NPC] ${npc.name} (${npc.id}) | emotion=${emotion} | r2=${portraitUrl}`)
+        } else {
+          console.log(`[NPC] ${npc.name} (${npc.id}) — new NPC, no R2 image`)
         }
 
         npcData = {
