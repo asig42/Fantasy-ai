@@ -1,6 +1,10 @@
 /**
  * r2_service.ts
  * Cloudflare R2 이미지 URL 생성 서비스
+ *
+ * R2 구조: sfw/{003_이름}/[씬].png
+ *   씬 파일 (전 캐릭터 공통): portrait, happy, serious, action, talk
+ *   씬 파일 (일부 캐릭터): library, market, tavern
  */
 
 const R2_PUBLIC_URL = (
@@ -11,31 +15,33 @@ const R2_PUBLIC_URL = (
 // 사전 정의 NPC 번호 범위 (aeternova-npcs.ts: npc_001 ~ npc_125)
 const PREDEFINED_NPC_MAX = 125
 
-// 감정 → SFW 씬 ID (run_aeternova.py SFW_SCENES와 동일)
+// ── 감정 → 씬 ID ──────────────────────────────────────────────────
+// neutral 기본값은 talk (대화 포즈), portrait는 배경 없는 스탠딩
 const EMOTION_TO_SCENE: Record<string, string> = {
-  neutral:   'portrait',
+  neutral:   'talk',
   happy:     'happy',
-  sad:       'sad',
+  sad:       'portrait',
   surprised: 'portrait',
-  angry:     'angry',
+  angry:     'serious',
   serious:   'serious',
   smug:      'happy',
 }
 
-// intensity override (감정보다 우선)
+// ── intensity → 씬 ID (감정/위치보다 우선) ─────────────────────────
 const INTENSITY_TO_SCENE: Record<string, string> = {
   climax:   'action',
   dramatic: 'serious',
 }
 
-// 씬 ID fallback 체인: 없으면 순서대로 시도
-// portrait는 항상 존재하므로 최종 fallback
-const SCENE_FALLBACK: Record<string, string> = {
-  angry:  'serious',
-  sad:    'portrait',
-}
+// ── 위치 키워드 → 캐릭터 씬 ID (intensity 없을 때 적용) ────────────
+// 해당 위치에서 NPC 대화 시 배경이 일치하는 씬 이미지 사용
+const LOCATION_TO_SCENE_MAP: Array<[string, string]> = [
+  ['선술집', 'tavern'], ['tavern', 'tavern'], ['여관', 'tavern'], ['inn', 'tavern'],
+  ['도서관', 'library'], ['library', 'library'],
+  ['시장', 'market'], ['market', 'market'], ['상점', 'market'],
+]
 
-// 위치 키워드 → locations 파일명
+// ── 위치 키워드 → locations 배경 이미지 파일명 ─────────────────────
 const LOCATION_MAP: Array<[string, string]> = [
   ['선술집', 'loc_tavern'], ['tavern', 'loc_tavern'], ['여관', 'loc_tavern'],
   ['시장',   'loc_market'], ['market', 'loc_market'],
@@ -54,6 +60,14 @@ const LOCATION_MAP: Array<[string, string]> = [
   ['학원',   'loc_academy'], ['academy', 'loc_academy'],
 ]
 
+function resolveLocationScene(location: string): string | undefined {
+  const lower = location.toLowerCase()
+  for (const [keyword, scene] of LOCATION_TO_SCENE_MAP) {
+    if (lower.includes(keyword)) return scene
+  }
+  return undefined
+}
+
 /**
  * 사전 정의 NPC 여부 확인 (npc_001 ~ npc_125)
  * 이 범위의 NPC는 R2에 이미지가 존재하므로 fal.ai 생성 불필요
@@ -67,49 +81,49 @@ export function isPreDefinedNpc(npcId: string): boolean {
 
 /**
  * NPC id → R2 폴더명
- * ID에서 번호를 직접 추출: "npc_042" → "042_이름"
+ * R2 구조: {num}_{이름첫단어}  예) npc_001, 엘리아나 발타르 → "001_엘리아나"
  */
 export function getNpcFolder(npc: { id: string; name: string }): string {
   const match = npc.id.match(/(\d+)$/)
   const num = match ? match[1].padStart(3, '0') : '000'
-  return `${num}_${npc.name}`
+  const firstName = npc.name.split(' ')[0]   // "엘리아나 발타르" → "엘리아나"
+  return `${num}_${firstName}`
 }
 
 /**
- * 캐릭터 이미지 URL (한글/공백 포함 폴더명 URL 인코딩 처리)
+ * 캐릭터 이미지 URL
+ *
+ * 씬 선택 우선순위:
+ *   1. intensity (climax→action, dramatic→serious)
+ *   2. 현재 위치 기반 씬 (tavern, library, market)  ← 위치 immersion
+ *   3. emotion 기반 씬 (happy, serious, talk, portrait)
+ *
+ * 한글·공백 포함 폴더명은 encodeURIComponent로 URL 인코딩
  */
 export function getCharacterImageUrl(
   charFolder: string,
   emotion: string,
   intensity: string,
+  currentLocation?: string,
   isNsfw = false
 ): string {
   const category = isNsfw ? 'nsfw' : 'sfw'
-  const sceneId  = INTENSITY_TO_SCENE[intensity] ?? EMOTION_TO_SCENE[emotion] ?? 'portrait'
-  // 한글·공백이 포함된 폴더명을 URL-safe하게 인코딩
+
+  // Priority 1: intensity override
+  let sceneId = INTENSITY_TO_SCENE[intensity]
+
+  // Priority 2: location-specific scene (action 씬이 아닐 때만)
+  if (!sceneId && currentLocation) {
+    sceneId = resolveLocationScene(currentLocation)
+  }
+
+  // Priority 3: emotion
+  if (!sceneId) {
+    sceneId = EMOTION_TO_SCENE[emotion] ?? 'talk'
+  }
+
   const encodedFolder = encodeURIComponent(charFolder)
   return `${R2_PUBLIC_URL}/${category}/${encodedFolder}/${sceneId}.png`
-}
-
-/**
- * 씬 fallback URL: 특정 감정 씬이 없을 때 portrait으로 대체한 URL 반환
- */
-export function getCharacterImageUrlWithFallback(
-  charFolder: string,
-  emotion: string,
-  intensity: string,
-  isNsfw = false
-): string[] {
-  const primary = getCharacterImageUrl(charFolder, emotion, intensity, isNsfw)
-  const sceneId = INTENSITY_TO_SCENE[intensity] ?? EMOTION_TO_SCENE[emotion] ?? 'portrait'
-  const fallbackSceneId = SCENE_FALLBACK[sceneId]
-  const urls = [primary]
-  if (fallbackSceneId && fallbackSceneId !== sceneId) {
-    const encodedFolder = encodeURIComponent(charFolder)
-    const category = isNsfw ? 'nsfw' : 'sfw'
-    urls.push(`${R2_PUBLIC_URL}/${category}/${encodedFolder}/${fallbackSceneId}.png`)
-  }
-  return urls
 }
 
 /**

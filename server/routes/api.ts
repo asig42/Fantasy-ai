@@ -406,10 +406,11 @@ router.post('/game/action/stream', async (req: Request, res: Response) => {
         const emotion = response.npc_emotion ?? 'neutral'
         const intensity = response.visual_direction?.intensity ?? 'routine'
         // 사전 정의 NPC(001~125)만 R2 이미지 사용 — 런타임 생성 NPC는 null
+        const loc = response.current_location ?? currentLocation ?? ''
         const r2PortraitUrl = isPreDefinedNpc(npc.id)
-          ? getCharacterImageUrl(getNpcFolder(npc), emotion, intensity)
+          ? getCharacterImageUrl(getNpcFolder(npc), emotion, intensity, loc)
           : null
-        console.log(`[NPC] ${npc.name} (${npc.id}) | emotion=${emotion} | intensity=${intensity} | r2=${r2PortraitUrl ?? 'none (new npc)'}`)
+        console.log(`[NPC] ${npc.name} (${npc.id}) | emotion=${emotion} | loc=${loc} | url=${r2PortraitUrl ?? 'none'}`)
         npcData = { id: npc.id, name: npc.name, title: npc.title, emotion, portraitUrl: r2PortraitUrl }
       }
     }
@@ -566,8 +567,9 @@ router.post('/game/action', async (req: Request, res: Response) => {
           console.log(`[Image] Reuse NPC portrait (cache hit): ${cacheKey}`)
         } else if (isPreDefinedNpc(npc.id)) {
           const intensity = response.visual_direction?.intensity ?? 'routine'
-          portraitUrl = getCharacterImageUrl(getNpcFolder(npc), emotion, intensity)
-          console.log(`[NPC] ${npc.name} (${npc.id}) | emotion=${emotion} | r2=${portraitUrl}`)
+          const loc = response.current_location ?? currentLocation ?? ''
+          portraitUrl = getCharacterImageUrl(getNpcFolder(npc), emotion, intensity, loc)
+          console.log(`[NPC] ${npc.name} (${npc.id}) | emotion=${emotion} | loc=${loc} | url=${portraitUrl}`)
         } else {
           console.log(`[NPC] ${npc.name} (${npc.id}) — new NPC, no R2 image`)
         }

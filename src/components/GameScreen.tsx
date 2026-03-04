@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useGameStore } from '../store/gameStore'
 import type { GameMessage, NPC } from '../types/game'
 import CharacterInfoPanel from './CharacterInfoPanel'
@@ -86,12 +86,28 @@ function SceneImage({ url, alt, pending }: { url?: string; alt: string; pending?
 // so icon never changes when NPC emotion updates in later turns.
 function ChatAvatar({ portraitUrl, hasNpc }: { portraitUrl?: string; hasNpc: boolean }) {
   const [loaded, setLoaded] = useState(false)
+  const [imgSrc, setImgSrc] = useState(portraitUrl)
 
-  if (portraitUrl) {
+  // portraitUrl prop이 바뀌면 상태 초기화 (새 NPC 등장)
+  React.useEffect(() => { setImgSrc(portraitUrl); setLoaded(false) }, [portraitUrl])
+
+  function handleError(e: React.SyntheticEvent<HTMLImageElement>) {
+    const img = e.currentTarget
+    // 위치 씬(tavern/library/market 등)이 없으면 portrait으로 fallback
+    if (!img.src.endsWith('/portrait.png')) {
+      setLoaded(false)
+      setImgSrc(img.src.replace(/\/[^/]+\.png$/, '/portrait.png'))
+    } else {
+      // portrait도 없으면 로딩 스피너 대신 아이콘 표시
+      setLoaded(true)
+    }
+  }
+
+  if (imgSrc) {
     return (
       <div className="relative" style={{ width: '52px', height: '52px', flexShrink: 0 }}>
         <img
-          src={portraitUrl}
+          src={imgSrc}
           alt="npc"
           className="w-full h-full rounded-full object-cover"
           style={{
@@ -101,6 +117,7 @@ function ChatAvatar({ portraitUrl, hasNpc }: { portraitUrl?: string; hasNpc: boo
             transition: 'opacity 0.4s',
           }}
           onLoad={() => setLoaded(true)}
+          onError={handleError}
         />
         {!loaded && (
           <div className="absolute inset-0 rounded-full flex items-center justify-center"
