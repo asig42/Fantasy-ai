@@ -162,7 +162,7 @@ export function getCharacterImageUrl(
   if (isNsfw) {
     const contexts = [currentLocation ?? '', ...nsfwContexts].filter(Boolean)
     const sceneId = resolveNsfwScene(contexts)
-    return `${R2_PUBLIC_URL}/nsfw/${encodedFolder}/${sceneId}.png`
+    return `${R2_PUBLIC_URL}/nsfw/${encodedFolder}/${sceneId ?? 'talk'}.png`
   }
 
   // SFW: Priority 1 intensity, 2 location, 3 emotion
@@ -170,7 +170,7 @@ export function getCharacterImageUrl(
   if (!sceneId && currentLocation) sceneId = resolveLocationScene(currentLocation)
   if (!sceneId) sceneId = EMOTION_TO_SCENE[emotion] ?? 'talk'
 
-  return `${R2_PUBLIC_URL}/sfw/${encodedFolder}/${sceneId}.png`
+  return `${R2_PUBLIC_URL}/sfw/${encodedFolder}/${sceneId ?? 'talk'}.png`
 }
 
 /**

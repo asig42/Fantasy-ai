@@ -24,6 +24,8 @@ function _emotionSet(n: string, h: string, a: string, s: string) {
 }
 
 // ── helpers ──────────────────────────────────────────────────────
+function unknown_age(): number { return 0 }
+
 function npc(
   num: number,
   name: string,
