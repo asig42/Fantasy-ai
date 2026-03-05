@@ -166,7 +166,7 @@ export function getCharacterImageUrl(
   }
 
   // SFW: Priority 1 intensity, 2 location, 3 emotion
-  let sceneId = INTENSITY_TO_SCENE[intensity]
+  let sceneId: string | undefined = INTENSITY_TO_SCENE[intensity]
   if (!sceneId && currentLocation) sceneId = resolveLocationScene(currentLocation)
   if (!sceneId) sceneId = EMOTION_TO_SCENE[emotion] ?? 'talk'
 
