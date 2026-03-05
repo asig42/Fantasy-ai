@@ -10,3 +10,4 @@ public/images/scenes/*.png
 public/images/scenes/*.svg
 *.log
 .DS_Store
+.claude/
