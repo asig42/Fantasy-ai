@@ -942,7 +942,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
               if (!line.startsWith('data:')) continue
               const payload = line.slice(5).trimStart()
               if (!payload) continue
-              try { processEvent(JSON.parse(payload)) } catch { /* skip malformed */ }
+              let parsed: Record<string, unknown>
+              try { parsed = JSON.parse(payload) } catch { continue /* skip malformed JSON */ }
+              processEvent(parsed) // Let errors from processEvent propagate (e.g. server error events)
             }
           }
         }
@@ -1027,8 +1029,42 @@ export const useGameStore = create<GameStore>((set, get) => ({
       await attemptStream(0)
     } catch (err: unknown) {
       const isAbort = err instanceof DOMException && err.name === 'AbortError'
-      const msg = isAbort ? '응답 시간이 초과되었습니다. 다시 시도해주세요.' : `행동 처리 실패: ${extractMessage(err)}`
-      set({ error: msg, isProcessing: false, streamingContent: '', streamStatus: null })
+      const errMsg = isAbort ? '응답 시간이 초과되었습니다. 다시 시도해주세요.' : `행동 처리 실패: ${extractMessage(err)}`
+
+      // If we have partial streaming text, save it as a partial message so the player sees something
+      const partialContent = get().streamingContent?.trim()
+      if (partialContent && partialContent.length > 20) {
+        const fallbackMsg: GameMessage = {
+          id: `msg_${Date.now()}_response_partial`,
+          role: 'narrator',
+          content: partialContent,
+          summary: '응답이 중단되어 부분 응답을 표시합니다.',
+          timestamp: Date.now(),
+        }
+        const newMessages = [...get().messages, fallbackMsg]
+        set({
+          messages: newMessages,
+          isProcessing: false,
+          streamingContent: '',
+          streamStatus: null,
+          responseTruncated: true,
+          error: null,
+        })
+
+        if (sessionId) {
+          const sessions = lsGet<Record<string, GameSession>>(LS_SESSIONS) ?? {}
+          const existing = sessions[sessionId]
+          if (existing) {
+            sessions[sessionId] = { ...existing, messages: newMessages, updatedAt: Date.now() }
+            lsSet(LS_SESSIONS, sessions)
+            saveSessionToServer(sessions[sessionId])
+            get().loadSessions()
+          }
+        }
+        return
+      }
+
+      set({ error: errMsg, isProcessing: false, streamingContent: '', streamStatus: null })
     }
   },
 

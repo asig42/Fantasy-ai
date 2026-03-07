@@ -658,7 +658,7 @@ ${NEW_NPC_RULES}`
 
   const msg = await getClient(apiKeyOverride).messages.create({
     model: selectModel(playerInput, history),
-    max_tokens: 5000,
+    max_tokens: 8000,
     system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
     messages: [{ role: 'user', content: userMessage }],
   })
@@ -700,7 +700,7 @@ ${NEW_NPC_RULES}`
 
   const stream = getClient(apiKeyOverride).messages.stream({
     model: selectModel(playerInput, history),
-    max_tokens: 5000,
+    max_tokens: 8000,
     system: [{ type: 'text', text: buildSystemPrompt(world, npcs, narrative, character, currentLocation), cache_control: { type: 'ephemeral' } }] as any,
     messages: [{ role: 'user', content: userMessage }],
   })
@@ -746,7 +746,40 @@ ${NEW_NPC_RULES}`
     }
   }
 
-  const response = parseJson<ClaudeGameResponse>(fullText.trim(), /\{[\s\S]*\}/, '게임 액션')
+  let response: ClaudeGameResponse
+  try {
+    response = parseJson<ClaudeGameResponse>(fullText.trim(), /\{[\s\S]*\}/, '게임 액션')
+  } catch (parseErr) {
+    // Attempt to extract narration from truncated JSON so the player at least sees the story text
+    const narrationMatch = fullText.match(/"narration"\s*:\s*"((?:[^"\\]|\\.)*)/)
+    if (narrationMatch) {
+      const narration = narrationMatch[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+      console.warn('[Claude] JSON truncated but narration recovered:', narration.slice(0, 80))
+      response = {
+        narration,
+        summary: '응답이 잘려 부분 복구되었습니다.',
+        scene_description: '',
+        image_prompt: '',
+        scene_tag: '',
+        reuse_scene_image: true,
+        current_location: '',
+        time_of_day: null,
+        weather: null,
+        npc_speaking: null,
+        npc_emotion: null,
+        available_npcs: [],
+        game_over: false,
+        new_npc: null,
+        suggested_actions: ['주변을 살펴본다', '앞으로 나아간다', '누군가에게 말을 건다', '현재 상황을 파악한다'],
+        stat_changes: { hp_change: 0, mana_change: 0, gold_change: 0, experience_gain: 0 },
+      } as ClaudeGameResponse
+    } else {
+      throw parseErr
+    }
+  }
   yield { type: 'done', response }
 }
 

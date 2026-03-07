@@ -392,6 +392,15 @@ export default function GameScreen() {
           isLatest={true}
           isStreaming={true}
         />
+      ) : isProcessing && !streamingContent && !displayMsg ? (
+        <div className="vn-text-overlay shadow-2xl">
+          <div className="flex items-center gap-3">
+            <div className="loading-rune w-5 h-5" />
+            <span className="text-sm" style={{ color: 'rgba(232,213,176,0.7)' }}>
+              {streamStatus || '이야기를 준비하고 있습니다...'}
+            </span>
+          </div>
+        </div>
       ) : displayMsg ? (
         <div className="relative w-full max-w-[800px] mx-auto">
           {/* Navigation Controls - Positioned exactly above the text overlay */}
