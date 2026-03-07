@@ -650,7 +650,8 @@ export async function processGameAction(
   history: GameMessage[],
   playerInput: string,
   currentLocation: string,
-  apiKeyOverride?: string
+  apiKeyOverride?: string,
+  signal?: AbortSignal
 ): Promise<ClaudeGameResponse> {
   console.log('[Claude] Processing game action...')
 
