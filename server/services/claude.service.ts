@@ -43,43 +43,71 @@ export async function testApiKey(key: string): Promise<boolean> {
 }
 
 // JSON 파싱 헬퍼 - 잘린 응답 감지 및 배열 부분 복구
+function sanitizeJson(raw: string): string {
+  let s = raw
+  // Remove JavaScript-style comments (// ... and /* ... */)
+  s = s.replace(/\/\/[^\n]*/g, '')
+  s = s.replace(/\/\*[\s\S]*?\*\//g, '')
+  // Remove trailing commas before } or ]
+  s = s.replace(/,\s*([\]}])/g, '$1')
+  // Replace single-quoted keys/values with double-quoted (basic heuristic)
+  // Only replace when preceded by { , [ or whitespace to avoid touching contractions inside strings
+  s = s.replace(/(?<=[\[{,]\s*)'([^']+?)'\s*:/g, '"$1":')
+  return s
+}
+
 function parseJson<T>(text: string, pattern: RegExp, context: string): T {
-  const match = text.match(pattern)
-  if (!match) throw new Error(`${context}: JSON을 찾을 수 없습니다`)
-  try {
-    return JSON.parse(match[0]) as T
-  } catch (e) {
-    const msg = String(e)
-    const isTruncated =
-      msg.includes('Unterminated') ||
-      msg.includes('Unexpected end') ||
-      msg.includes("Expected ','") ||
-      msg.includes("Expected '}'") ||
-      msg.includes("Expected ']'")
+  const match = text.match(pattern)
+  if (!match) throw new Error(`${context}: JSON을 찾을 수 없습니다`)
 
-    // 배열인 경우 완전한 항목만 복구 시도
-    if (isTruncated && pattern.source.startsWith('\\[')) {
-      try {
-        const partial = match[0]
-        const items: unknown[] = []
-        // 완성된 객체만 추출 (마지막 불완전한 항목 제외)
-        const objPattern = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
-        let m: RegExpExecArray | null
-        while ((m = objPattern.exec(partial)) !== null) {
-          try { items.push(JSON.parse(m[0])) } catch { /* skip malformed */ }
-        }
-        if (items.length >= 5) {
-          console.warn(`[Claude] ${context}: 응답 잘림 - ${items.length}개 항목 복구됨`)
-          return items as T
-        }
-      } catch { /* 복구 실패시 아래 에러로 */ }
-    }
+  // Try raw first, then sanitized
+  const candidates = [match[0], sanitizeJson(match[0])]
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate) as T
+    } catch {
+      // try next candidate
+    }
+  }
 
-    if (isTruncated) {
-      throw new Error(`${context}: 응답이 잘렸습니다 (max_tokens 초과). 잠시 후 다시 시도해주세요.`)
-    }
-    throw new Error(`${context}: JSON 파싱 실패 - ${msg}`)
-  }
+  // All attempts failed — analyze the error for better messaging
+  try {
+    JSON.parse(match[0])
+  } catch (e) {
+    const msg = String(e)
+    const isTruncated =
+      msg.includes('Unterminated') ||
+      msg.includes('Unexpected end') ||
+      msg.includes("Expected ','") ||
+      msg.includes("Expected '}'") ||
+      msg.includes("Expected ']'")
+
+    // 배열인 경우 완전한 항목만 복구 시도
+    if (isTruncated && pattern.source.startsWith('\\[')) {
+      try {
+        const partial = match[0]
+        const items: unknown[] = []
+        // 완성된 객체만 추출 (마지막 불완전한 항목 제외)
+        const objPattern = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
+        let m: RegExpExecArray | null
+        while ((m = objPattern.exec(partial)) !== null) {
+          try { items.push(JSON.parse(m[0])) } catch { /* skip malformed */ }
+        }
+        if (items.length >= 2) {
+          console.warn(`[Claude] ${context}: 응답 잘림 - ${items.length}개 항목 복구됨`)
+          return items as T
+        }
+      } catch { /* 복구 실패시 아래 에러로 */ }
+    }
+
+    if (isTruncated) {
+      throw new Error(`${context}: 응답이 잘렸습니다 (max_tokens 초과). 잠시 후 다시 시도해주세요.`)
+    }
+    throw new Error(`${context}: JSON 파싱 실패 - ${msg}`)
+  }
+
+  // Should never reach here, but TypeScript requires it
+  throw new Error(`${context}: JSON 파싱 실패`)
 }
 
 // ================================================================
@@ -814,7 +842,7 @@ ${locationInfo}
 - 웹소설 스타일의 몰입감 있는 나레이션 (4-6문단, 최소 500자)
 ${locationNpcs && locationNpcs.length > 0 ? `
 이 지역에 있을 수 있는 인물들 (모두 등장시킬 필요 없음, 분위기 참고용):
-${locationNpcs.map(n => `- ${n.title} ${n.name}: ${n.personality.slice(0,2).join(', ')}`).join('\n')}` : ''}
+${locationNpcs.map(n => `- ${n.title} ${n.name}: ${n.personality.slice(0, 2).join(', ')}`).join('\n')}` : ''}
 
 JSON 형식:
 {

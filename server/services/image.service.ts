@@ -1,9 +1,49 @@
 import { fal } from '@fal-ai/client'
+import fs from 'fs-extra'
+import path from 'path'
+import crypto from 'crypto'
 import type { VisualDirection, NPC } from '../../src/types/game'
 
 // Configure fal.ai if key is available
 if (process.env.FAL_KEY) {
   fal.config({ credentials: process.env.FAL_KEY })
+}
+
+// ---------- Download & persist FAL CDN images locally ----------
+const PUBLIC_DIR = path.join(process.cwd(), 'public')
+
+async function downloadToLocal(
+  cdnUrl: string,
+  subdir: 'map' | 'npcs' | 'scenes',
+  filename: string
+): Promise<string> {
+  try {
+    const dir = path.join(PUBLIC_DIR, 'images', subdir)
+    await fs.ensureDir(dir)
+
+    // Determine extension from content-type or URL
+    const ext = cdnUrl.includes('.png') ? '.png' : '.jpeg'
+    const safeName = filename.replace(/[^a-zA-Z0-9_-]/g, '_') + ext
+    const filePath = path.join(dir, safeName)
+
+    const res = await fetch(cdnUrl)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+
+    const buffer = Buffer.from(await res.arrayBuffer())
+    await fs.writeFile(filePath, buffer)
+
+    const localUrl = `/images/${subdir}/${safeName}`
+    console.log(`[Image] Saved locally: ${localUrl} (${(buffer.length / 1024).toFixed(0)} KB)`)
+    return localUrl
+  } catch (err) {
+    console.error(`[Image] Failed to download ${cdnUrl}:`, err)
+    // Return original CDN URL as fallback
+    return cdnUrl
+  }
+}
+
+function shortHash(): string {
+  return crypto.randomBytes(4).toString('hex')
 }
 
 // ---------- Placeholder SVG Generator (inline data URLs) ----------
@@ -116,7 +156,9 @@ export async function generateMapImage(
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.data?.images?.[0]?.url ?? placeholderDataUrl('map', worldName)
+    const cdnUrl = result.data?.images?.[0]?.url
+    if (!cdnUrl) return placeholderDataUrl('map', worldName)
+    return downloadToLocal(cdnUrl, 'map', `world-map-${shortHash()}`)
   } catch (err) {
     console.error('[Image] Map generation failed:', err)
     return placeholderDataUrl('map', worldName)
@@ -152,7 +194,10 @@ export async function generateNpcPortrait(
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.data?.images?.[0]?.url ?? placeholderDataUrl('portrait', npc.name)
+    const cdnUrl = result.data?.images?.[0]?.url
+    if (!cdnUrl) return placeholderDataUrl('portrait', npc.name)
+    const safeName = npc.name.replace(/[^a-zA-Z0-9가-힣_-]/g, '_')
+    return downloadToLocal(cdnUrl, 'npcs', `${safeName}-portrait-${shortHash()}`)
   } catch (err) {
     console.error(`[Image] Portrait failed for ${npc.name}:`, err)
     return placeholderDataUrl('portrait', npc.name)
@@ -201,7 +246,10 @@ export async function generateNpcEmotion(
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.data?.images?.[0]?.url ?? placeholderDataUrl('portrait', npc.name)
+    const cdnUrl = result.data?.images?.[0]?.url
+    if (!cdnUrl) return placeholderDataUrl('portrait', npc.name)
+    const safeName = npc.name.replace(/[^a-zA-Z0-9가-힣_-]/g, '_')
+    return downloadToLocal(cdnUrl, 'npcs', `${safeName}-${emotion}-${shortHash()}`)
   } catch (err) {
     console.error('[Image] Emotion portrait failed:', err)
     return placeholderDataUrl('portrait', npc.name)
@@ -364,7 +412,9 @@ export async function generateEnhancedSceneImage(
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.data?.images?.[0]?.url ?? placeholderDataUrl('scene', sceneDescription.slice(0, 40))
+    const cdnUrl = result.data?.images?.[0]?.url
+    if (!cdnUrl) return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
+    return downloadToLocal(cdnUrl, 'scenes', `scene-${shortHash()}`)
   } catch (err) {
     console.error('[Image] Enhanced scene generation failed:', err)
     return placeholderDataUrl('scene', sceneDescription.slice(0, 40))
@@ -403,7 +453,9 @@ export async function generateMapImageWithPrompt(
       },
     }) as unknown as { data: { images: Array<{ url: string }> } }
 
-    return result.data?.images?.[0]?.url ?? placeholderDataUrl('map', 'Aeternova')
+    const cdnUrl = result.data?.images?.[0]?.url
+    if (!cdnUrl) return placeholderDataUrl('map', 'Aeternova')
+    return downloadToLocal(cdnUrl, 'map', `aeternova-map-${shortHash()}`)
   } catch (err) {
     console.error('[Image] Aeternova map generation failed:', err)
     return placeholderDataUrl('map', 'Aeternova')
