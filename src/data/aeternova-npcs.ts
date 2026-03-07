@@ -24,10 +24,6 @@ function _emotionSet(n: string, h: string, a: string, s: string) {
 }
 
 /** Sentinel for NPCs whose ages are unknown / mysterious */
-function unknown_age(): number {
-  return 0
-}
-
 // ── helpers ──────────────────────────────────────────────────────
 function unknown_age(): number { return 0 }
 
