@@ -820,7 +820,7 @@ export async function generateInitialScene(
 
   const msg = await getClient(apiKeyOverride).messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 3000,
+    max_tokens: 4096,
     system: `당신은 판타지 TRPG의 게임 마스터입니다.
 반드시 유효한 JSON만 반환하세요.`,
     messages: [

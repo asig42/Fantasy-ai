@@ -538,6 +538,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         sceneImagePending?: boolean
         initialScene?: {
           sceneDescription: string
+          imagePrompt?: string | null
           visualDirection?: string | null
         }
       }
@@ -582,6 +583,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (initialScene?.sceneDescription) {
         axios.post('/api/session/initial-image', {
           sceneDescription: initialScene.sceneDescription,
+          imagePrompt: initialScene.imagePrompt ?? null,
           visualDirection: initialScene.visualDirection ?? null,
           currentLocation,
           weather: weather ?? null,
