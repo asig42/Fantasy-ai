@@ -255,6 +255,7 @@ router.post('/session/create', async (req: Request, res: Response) => {
       sceneImagePending: true,
       initialScene: {
         sceneDescription: initialResponse.scene_description,
+        imagePrompt: initialResponse.image_prompt ?? null,
         visualDirection: initialResponse.visual_direction ?? null,
       },
     })
@@ -268,8 +269,9 @@ router.post('/session/create', async (req: Request, res: Response) => {
 // POST /api/session/initial-image — Generate initial scene image async
 // ================================================================
 router.post('/session/initial-image', async (req: Request, res: Response) => {
-  const { sceneDescription, visualDirection, currentLocation, weather, character } = req.body as {
+  const { sceneDescription, imagePrompt, visualDirection, currentLocation, weather, character } = req.body as {
     sceneDescription: string
+    imagePrompt?: string | null
     visualDirection?: VisualDirection | null
     currentLocation?: string
     weather?: string | null
@@ -284,16 +286,18 @@ router.post('/session/initial-image', async (req: Request, res: Response) => {
   try {
     const { fal: falKey } = getRequestKeys(req)
     const heroApp = buildHeroAppearance(character)
-    const sceneImageUrl = getLocationImageUrl(currentLocation ?? '') 
+    const sceneImageUrl = getLocationImageUrl(currentLocation ?? '')
       ?? await imageService.generateEnhancedSceneImage(
           sceneDescription, visualDirection ?? null, [], heroApp,
-          currentLocation, weather ?? undefined, falKey
+          currentLocation, weather ?? undefined, falKey,
+          imagePrompt ?? undefined
         )
 
     res.json({ sceneImageUrl })
   } catch (err) {
     console.error('[API] Initial image generation error:', err)
-    res.status(500).json({ error: apiError(err) })
+    // 이미지 생성 실패 시 500 대신 null URL 반환 — 클라이언트가 gracefully 처리
+    res.json({ sceneImageUrl: null })
   }
 })
 
