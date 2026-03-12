@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -11,8 +10,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: '0.0.0.0',
     proxy: {
-      // SSE 스트리밍 엔드포인트 — 타임아웃 완전 해제
       '/api/game/action/stream': {
         target: 'http://localhost:3000',
         changeOrigin: true,
