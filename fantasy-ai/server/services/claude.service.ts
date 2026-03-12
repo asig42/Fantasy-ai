@@ -43,71 +43,43 @@ export async function testApiKey(key: string): Promise<boolean> {
 }
 
 // JSON 파싱 헬퍼 - 잘린 응답 감지 및 배열 부분 복구
-function sanitizeJson(raw: string): string {
-  let s = raw
-  // Remove JavaScript-style comments (// ... and /* ... */)
-  s = s.replace(/\/\/[^\n]*/g, '')
-  s = s.replace(/\/\*[\s\S]*?\*\//g, '')
-  // Remove trailing commas before } or ]
-  s = s.replace(/,\s*([\]}])/g, '$1')
-  // Replace single-quoted keys/values with double-quoted (basic heuristic)
-  // Only replace when preceded by { , [ or whitespace to avoid touching contractions inside strings
-  s = s.replace(/(?<=[\[{,]\s*)'([^']+?)'\s*:/g, '"$1":')
-  return s
-}
-
 function parseJson<T>(text: string, pattern: RegExp, context: string): T {
-  const match = text.match(pattern)
-  if (!match) throw new Error(`${context}: JSON을 찾을 수 없습니다`)
+  const match = text.match(pattern)
+  if (!match) throw new Error(`${context}: JSON을 찾을 수 없습니다`)
+  try {
+    return JSON.parse(match[0]) as T
+  } catch (e) {
+    const msg = String(e)
+    const isTruncated =
+      msg.includes('Unterminated') ||
+      msg.includes('Unexpected end') ||
+      msg.includes("Expected ','") ||
+      msg.includes("Expected '}'") ||
+      msg.includes("Expected ']'")
 
-  // Try raw first, then sanitized
-  const candidates = [match[0], sanitizeJson(match[0])]
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate) as T
-    } catch {
-      // try next candidate
-    }
-  }
+    // 배열인 경우 완전한 항목만 복구 시도
+    if (isTruncated && pattern.source.startsWith('\\[')) {
+      try {
+        const partial = match[0]
+        const items: unknown[] = []
+        // 완성된 객체만 추출 (마지막 불완전한 항목 제외)
+        const objPattern = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
+        let m: RegExpExecArray | null
+        while ((m = objPattern.exec(partial)) !== null) {
+          try { items.push(JSON.parse(m[0])) } catch { /* skip malformed */ }
+        }
+        if (items.length >= 5) {
+          console.warn(`[Claude] ${context}: 응답 잘림 - ${items.length}개 항목 복구됨`)
+          return items as T
+        }
+      } catch { /* 복구 실패시 아래 에러로 */ }
+    }
 
-  // All attempts failed — analyze the error for better messaging
-  try {
-    JSON.parse(match[0])
-  } catch (e) {
-    const msg = String(e)
-    const isTruncated =
-      msg.includes('Unterminated') ||
-      msg.includes('Unexpected end') ||
-      msg.includes("Expected ','") ||
-      msg.includes("Expected '}'") ||
-      msg.includes("Expected ']'")
-
-    // 배열인 경우 완전한 항목만 복구 시도
-    if (isTruncated && pattern.source.startsWith('\\[')) {
-      try {
-        const partial = match[0]
-        const items: unknown[] = []
-        // 완성된 객체만 추출 (마지막 불완전한 항목 제외)
-        const objPattern = /\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g
-        let m: RegExpExecArray | null
-        while ((m = objPattern.exec(partial)) !== null) {
-          try { items.push(JSON.parse(m[0])) } catch { /* skip malformed */ }
-        }
-        if (items.length >= 2) {
-          console.warn(`[Claude] ${context}: 응답 잘림 - ${items.length}개 항목 복구됨`)
-          return items as T
-        }
-      } catch { /* 복구 실패시 아래 에러로 */ }
-    }
-
-    if (isTruncated) {
-      throw new Error(`${context}: 응답이 잘렸습니다 (max_tokens 초과). 잠시 후 다시 시도해주세요.`)
-    }
-    throw new Error(`${context}: JSON 파싱 실패 - ${msg}`)
-  }
-
-  // Should never reach here, but TypeScript requires it
-  throw new Error(`${context}: JSON 파싱 실패`)
+    if (isTruncated) {
+      throw new Error(`${context}: 응답이 잘렸습니다 (max_tokens 초과). 잠시 후 다시 시도해주세요.`)
+    }
+    throw new Error(`${context}: JSON 파싱 실패 - ${msg}`)
+  }
 }
 
 // ================================================================
@@ -421,16 +393,9 @@ const GM_JSON_FORMAT = `{
 // - 제거할 때: action="remove" + 기존 id 사용
 // - 변화 없으면 null
 
-const NEW_NPC_RULES = `## NPC 등장 규칙 (반드시 준수)
-
-### 우선순위 1: 기존 130명 NPC를 먼저 활용하라
-- 스토리에 NPC가 필요할 때는 반드시 위 "주요 NPC 목록"에서 먼저 찾아라
-- 장소에 어울리는 NPC가 목록에 있으면 그 NPC를 등장시켜라 (예: 선술집 → 술집 관련 NPC, 왕궁 → 귀족/왕족 NPC)
-- new_npc는 목록의 130명 중 어느 누구도 이 역할에 맞지 않을 때에만 사용하라
-- 일반 행인, 상인, 경비병처럼 이름 없는 단역도 new_npc로 만들지 말고 narration 텍스트로만 처리하라
-
-### 우선순위 2: new_npc 생성 조건
-- 오직 스토리상 중요한 신규 인물이 필요하고, 기존 목록에 적합한 NPC가 없을 때만 허용
+const NEW_NPC_RULES = `## 새 NPC 즉석 생성 규칙
+- 위 NPC 목록에 없는 새 인물이 이야기에 등장해야 할 때만 new_npc 필드를 채우세요
+- 기존 NPC와 상호작용할 때는 new_npc를 null로 두세요
 - new_npc를 생성할 경우 npc_speaking에 그 id를 사용하세요
 - new_npc 형식:
 {
@@ -536,10 +501,10 @@ function buildStaticSystemPrompt(world: WorldData, npcs: NPC[], narrative: strin
     세계: ${world.name}
     세계 배경: ${world.lore}
     
-    ## 주요 NPC 목록 (총 130명 - NPC가 필요하면 반드시 여기서 먼저 선택할 것)
+    ## 주요 NPC 목록
     ${npcSummary}
-    (중요: 목록에 적합한 NPC가 있으면 절대 new_npc 생성 금지. 목록의 NPC를 우선 등장시킬 것.)
     (주의: NPC들은 위 수위 지침에 따라 훨씬 더 대담하고 유혹적이거나 위압적인 태도를 취할 수 있습니다.)
+    
     ## 메인 서사
     ${narrative.slice(0, 500)}...
     
@@ -650,8 +615,7 @@ export async function processGameAction(
   history: GameMessage[],
   playerInput: string,
   currentLocation: string,
-  apiKeyOverride?: string,
-  signal?: AbortSignal
+  apiKeyOverride?: string
 ): Promise<ClaudeGameResponse> {
   console.log('[Claude] Processing game action...')
 
@@ -683,7 +647,7 @@ ${NEW_NPC_RULES}`
       }
     ] as any,
     messages: [{ role: 'user', content: userMessage }],
-  }, signal ? { signal } : undefined)
+  })
 
   const textContent = msg.content.find(b => b.type === 'text')
   if (!textContent || textContent.type !== 'text') throw new Error('No text response')
@@ -705,8 +669,7 @@ export async function* processGameActionStream(
   history: GameMessage[],
   playerInput: string,
   currentLocation: string,
-  apiKeyOverride?: string,
-  signal?: AbortSignal
+  apiKeyOverride?: string
 ): AsyncGenerator<StreamEvent> {
   const historyText = buildHistoryText(history)
 
@@ -736,11 +699,7 @@ ${NEW_NPC_RULES}`
       }
     ] as any,
     messages: [{ role: 'user', content: userMessage }],
-  }, signal ? { signal } : undefined)
-
-  if (signal) {
-    signal.addEventListener('abort', () => { try { (stream as any).abort?.() } catch {} }, { once: true })
-  }
+  })
 
   let fullText = ''
   let narrationOffset = -1
@@ -820,7 +779,7 @@ export async function generateInitialScene(
 
   const msg = await getClient(apiKeyOverride).messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 4096,
+    max_tokens: 3000,
     system: `당신은 판타지 TRPG의 게임 마스터입니다.
 반드시 유효한 JSON만 반환하세요.`,
     messages: [
@@ -843,7 +802,7 @@ ${locationInfo}
 - 웹소설 스타일의 몰입감 있는 나레이션 (4-6문단, 최소 500자)
 ${locationNpcs && locationNpcs.length > 0 ? `
 이 지역에 있을 수 있는 인물들 (모두 등장시킬 필요 없음, 분위기 참고용):
-${locationNpcs.map(n => `- ${n.title} ${n.name}: ${n.personality.slice(0, 2).join(', ')}`).join('\n')}` : ''}
+${locationNpcs.map(n => `- ${n.title} ${n.name}: ${n.personality.slice(0,2).join(', ')}`).join('\n')}` : ''}
 
 JSON 형식:
 {

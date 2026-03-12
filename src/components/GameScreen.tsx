@@ -122,9 +122,10 @@ function TopInfoPanel({
 
 // ── Dropdown Menu ──
 function DropdownMenu({
-  onShowInfoPanel, onResetGame, onClose
+  onShowInfoPanel, onResetGame, onClose, nsfwEnabled, onToggleNsfw
 }: {
   onShowInfoPanel: () => void; onResetGame: () => void; onClose: () => void
+  nsfwEnabled: boolean; onToggleNsfw: () => void
 }) {
   return (
     <div className="absolute top-2 left-20 ml-64 z-50 mt-1 w-40 fantasy-panel rounded-sm overflow-hidden shadow-2xl">
@@ -132,6 +133,16 @@ function DropdownMenu({
         style={{ color: 'rgba(232,213,176,0.9)', borderBottom: '1px solid #1a1020' }}
         onClick={() => { onClose(); onShowInfoPanel() }}>
         📋 캐릭터 정보
+      </button>
+      <button className="w-full flex items-center justify-between px-4 py-3 text-sm transition-colors hover:bg-white/5"
+        style={{ color: nsfwEnabled ? '#e8a0bf' : 'rgba(160,144,112,0.7)', borderBottom: '1px solid #1a1020' }}
+        onClick={() => onToggleNsfw()}>
+        <span>🔞 성인 이미지</span>
+        <span style={{ fontSize: '10px', padding: '1px 5px', borderRadius: '2px',
+          background: nsfwEnabled ? 'rgba(232,160,191,0.2)' : 'rgba(255,255,255,0.06)',
+          color: nsfwEnabled ? '#e8a0bf' : 'rgba(160,144,112,0.5)' }}>
+          {nsfwEnabled ? 'ON' : 'OFF'}
+        </span>
       </button>
       <button className="w-full text-left px-4 py-3 text-sm transition-colors hover:bg-red-900/40"
         style={{ color: '#ff6b6b' }}
@@ -278,6 +289,7 @@ export default function GameScreen() {
     messages, npcs, sendAction, isProcessing, streamingContent,
     suggestedActions, error, resetGame, currentScene, streamStatus,
     responseTruncated, currentLocation, timeOfDay, weather,
+    nsfwEnabled, toggleNsfw,
   } = useGameStore()
 
   const [input, setInput] = useState('')
@@ -367,6 +379,8 @@ export default function GameScreen() {
           <DropdownMenu
             onShowInfoPanel={() => setShowInfoPanel(true)}
             onResetGame={resetGame}
+            nsfwEnabled={nsfwEnabled}
+            onToggleNsfw={toggleNsfw}
             onClose={() => setShowMenu(false)}
           />
         </>

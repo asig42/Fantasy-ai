@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
@@ -10,19 +11,10 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: '0.0.0.0',
     proxy: {
-      '/api/game/action/stream': {
-        target: 'http://localhost:3000',
-        changeOrigin: true,
-        timeout: 0,
-        proxyTimeout: 0,
-      },
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
-        timeout: 600_000,
-        proxyTimeout: 600_000,
       },
       '/images': {
         target: 'http://localhost:3000',
